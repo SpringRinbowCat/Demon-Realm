@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "bosses": [
+    {
+      "id": "1",
+      "displayName": "阿熊",
+      "maxHp": 100000,
+      "drops": [
+        {
+          "type": "currency",
+          "itemId": "gold",
+          "quantity": 100000,
+          "probability": 1.0
+        },
+        {
+          "type": "treasure",
+          "itemId": "flame_shard",
+          "quantity": 1,
+          "probability": 0.25
+        }
+      ],
+      "images": {
+        "background": "demon_realm_fire_background.png",
+        "idle": "boss_1_idle.png"
+      }
+    }
+  ]
+}
