@@ -1,0 +1,5 @@
+# Local art source files; runtime assets stay under Resources/
+/ArtSource/
+
+# macOS Finder metadata
+.DS_Store

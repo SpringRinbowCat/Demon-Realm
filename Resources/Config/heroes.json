@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "heroes": [
+    {
+      "id": "1",
+      "displayName": "沛总",
+      "baseAttack": 1,
+      "baseAttackIntervalSeconds": 4.0,
+      "firstUpgradeGoldCost": 20,
+      "upgradeCostMultiplier": 1.5,
+      "images": {
+        "icon": "hero_1_icon.png"
+      },
+      "skills": [
+        {
+          "id": "keyboard_face_roll",
+          "unlockLevel": 1,
+          "displayName": "脸滚键盘",
+          "description": "沛总是LOL超凡大师，擅长走A，可通过点击Boss造成等同于(hero_1_Attack)的伤害。"
+        },
+        {
+          "id": "growth",
+          "unlockLevel": 20,
+          "displayName": "成长",
+          "description": "沛总坚持每天奖励自己提升自己，点击攻击时有20%概率让攻击力永久增加(hero_1_AttackLevel*hero_1_HeroLevel/50)。[英雄等级每50级技能强化一次]"
+        }
+      ]
+    }
+  ]
+}
