@@ -5,6 +5,18 @@
       "id": "1",
       "displayName": "沛总",
       "baseAttack": 1,
+      "attackLevelMultiplierRanges": [
+        {
+          "minLevel": 1,
+          "maxLevel": 30,
+          "multiplier": 2.0
+        },
+        {
+          "minLevel": 31,
+          "maxLevel": 80,
+          "multiplier": 1.5
+        }
+      ],
       "baseAttackIntervalSeconds": 4.0,
       "firstUpgradeGoldCost": 20,
       "upgradeCostMultiplier": 1.5,
