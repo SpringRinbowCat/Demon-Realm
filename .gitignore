@@ -3,3 +3,10 @@
 
 # macOS Finder metadata
 .DS_Store
+
+# Cocos2d-x engine checkout; fetched locally, not vendored into the repository
+/cocos2d/
+
+# Build output
+/build/
+

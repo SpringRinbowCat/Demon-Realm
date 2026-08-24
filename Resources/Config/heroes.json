@@ -21,7 +21,7 @@
       "firstUpgradeGoldCost": 20,
       "upgradeCostMultiplier": 1.5,
       "images": {
-        "icon": "hero_1_icon.png"
+        "icon": "hero_1.png"
       },
       "skills": [
         {

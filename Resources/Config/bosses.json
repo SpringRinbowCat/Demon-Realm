@@ -20,8 +20,8 @@
         }
       ],
       "images": {
-        "background": "demon_realm_fire_background.png",
-        "idle": "boss_1_idle.png"
+        "background": "背景_战斗界面.png",
+        "idle": "Boss_1.png"
       }
     }
   ]

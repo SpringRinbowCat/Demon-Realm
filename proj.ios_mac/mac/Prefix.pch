@@ -1,0 +1,8 @@
+// macOS 目标的预编译头，仅包含平台与引擎头文件，不放业务声明。
+#ifdef __OBJC__
+    #import <Cocoa/Cocoa.h>
+#endif
+
+#ifdef __cplusplus
+    #include "cocos2d.h"
+#endif

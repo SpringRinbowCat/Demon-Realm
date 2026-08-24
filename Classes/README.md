@@ -6,7 +6,17 @@
 
 `Classes/` 是项目 C++ 代码根目录，负责游戏状态、业务规则、用例编排、Cocos 表现适配、存档和其它外部系统适配。
 
-当前目录已经按目标架构建立，但实现仍处于占位阶段：目录中主要只有 `.gitkeep`，尚未实现 `GameRoot`、Controller、System、Service 或 View。下文中的类名、数据流和目录职责是目标设计，不代表现有代码已经完成。
+当前目录已经按目标架构建立，实现刚刚起步。已实现：
+
+- `App/GameLauncher`：Cocos 应用启动入口，设置渲染上下文、设计分辨率、帧率并装配首个场景。
+- `Presentation/MainSceneView`：单场景宿主的表现根节点，挂载当前页面并接收页面回传的请求。
+- `Presentation/EnterGameView`：进入游戏页面，包含背景图和进入游戏按钮。
+
+其余目录仍只有 `.gitkeep`，尚未实现 `GameRoot`、Controller、System 或 Service。下文中未标注为已实现的类名、数据流和目录职责属于目标设计，不代表现有代码已经完成。
+
+项目已接入 cocos2d-x 4.0，macOS 上可以构建运行；平台入口在仓库根目录的 `proj.ios_mac/mac/main.cpp` 和 `proj.win32/main.cpp`，只负责创建 `GameLauncher` 并进入引擎主循环。构建步骤、架构限制和引擎补丁见 [../README.md](../README.md)。新增或移除源文件时必须同步更新根目录 `CMakeLists.txt` 的源文件列表。
+
+代码约定：业务代码放在 `DemonRealm` 命名空间中，文件按 `.hpp` / `.cpp` 拆分，命名和边界规则见 `.kiro/skills/code-architecture-standards`。
 
 Classes 不保存 PNG、JSON 或其它运行时资源。资源由 [Resources 模块](../Resources/README.md) 管理，Classes 只能通过配置、资源仓储或明确的 Infrastructure 接口访问它们。
 
@@ -29,7 +39,7 @@ Classes 不保存 PNG、JSON 或其它运行时资源。资源由 [Resources 模
 | `Domain` / `Model` | 游戏状态和不依赖外部框架的纯 C++ 规则 | 不依赖 Cocos，不持有 `Node` 或 `Sprite` |
 | `Application` / `Controller` | 将点击、购买、领取等输入编排为业务命令 | 不负责贴图、动画和具体 UI |
 | `System` / `Service` | 战斗、经济、关卡、升级、挂机等可复用能力 | 单一职责，统一状态写入边界 |
-| `Presentation` / `Cocos` | 场景、输入、UI、动画和像素贴图表现 | 只展示状态、回传输入，不计算业务规则 |
+| `Presentation` | Cocos 场景、输入、UI、动画和像素贴图表现 | 只展示状态、回传输入，不计算业务规则 |
 | `Infrastructure` | 存档、配置、时间、平台、资源和音频适配 | 隔离 Cocos、文件系统和其它外部依赖 |
 | `Events` | 跨模块的类型化事实通知 | 不用无约束字符串事件替代业务接口 |
 
@@ -124,6 +134,38 @@ EventUpgradePurchased
 
 具体 PNG、JSON、像素密度和资源来源规则见 [Resources/README.md](../Resources/README.md)。
 
+## 已实现页面：进入游戏页面
+
+`Presentation/EnterGameView` 是当前唯一已实现的视图，按三步交付：
+
+1. **背景图**：加载页面专用背景 `Textures/Pixel/Backgrounds/背景_进入游戏界面.png`，在可见区域居中，按设计分辨率 1:1 呈现，不做运行时缩放，并对贴图设置最近邻采样。页面背景与战斗场景背景相互独立，不共用同一张贴图。
+2. **进入游戏按钮**：用 `Textures/Pixel/UI/按钮_进入游戏_常态.png` 和 `按钮_进入游戏_按下.png` 组成 `MenuItemSprite`，挂在 `Menu` 上接收点击；按钮文字暂用系统字体绘制，接入像素字体后再替换。
+3. **点击响应**：`_onEnterGameButtonClicked()` 当前只输出日志，并调用上层通过 `setOnEnterGameRequested()` 注入的回调；视图本身不决定跳转目标。
+
+边界约束：
+
+- 视图继承 `cocos2d::Node`，只做表现和输入回传，不持有业务状态，也不计算战斗、金币、升级或关卡规则。
+- 按钮点击不直接切换场景；视图只回传“请求进入游戏”这一事实，真实跳转由上层实现。
+- 视图内不启动线程、不持有异步句柄，只能在主线程创建、访问和销毁。
+- 资源路径集中在实现文件的常量中，业务层不硬编码 Cocos 资源路径。
+- 背景精灵和按钮菜单的生命周期由节点树持有，视图只保存非拥有引用。
+
+页面挂载与请求回传链路：
+
+```text
+GameLauncher（设置窗口、设计分辨率、帧率）
+    ↓ runWithScene
+MainSceneView（单场景宿主）
+    ↓ addChild + setOnEnterGameRequested
+EnterGameView（背景图 + 进入游戏按钮）
+    ↓ 点击
+EnterGameView 输出日志并回传请求
+    ↓
+MainSceneView 记录请求（页面跳转待实现）
+```
+
+待补齐项：`GameRoot` 尚未实现，目前由 `GameLauncher` 直接装配场景；进入游戏后的目标页面和真正的页面切换也尚未实现。
+
 ## 存档与挂机时间
 
 - 所有持久化统一经过 `SaveService`，业务模块通过明确的 Save Binding 注册自己的数据。
@@ -152,7 +194,7 @@ EventUpgradePurchased
 ./
 ├── App/
 │   ├── GameRoot                 # 统一组装系统、依赖注入和生命周期
-│   ├── GameLauncher             # Cocos 启动入口
+│   ├── GameLauncher             # Cocos 启动入口（已实现）
 │   └── GameLifecycle            # 前后台、暂停、恢复和退出处理
 ├── Domain/
 │   ├── State/                   # 玩家、Boss、关卡、金币和升级状态
@@ -165,15 +207,15 @@ EventUpgradePurchased
 │   ├── UpgradeController         # 处理升级购买请求
 │   ├── StageController           # 处理关卡进入、切换和重试
 │   └── IdleController            # 处理自动战斗和离线收益领取
-├── Presentation/
-│   └── Cocos/
-│       ├── MainSceneView         # 单场景表现根节点
-│       ├── BossView              # Boss 贴图、血条和受击表现
-│       ├── GoldView              # 金币数量和奖励表现
-│       ├── UpgradeView           # 升级项目、等级和价格界面
-│       ├── StageView             # 关卡和通关状态界面
-│       ├── PixelSpriteView       # 像素 Sprite 和帧动画表现
-│       └── GameViewAdapter       # 场景节点与各 View 的装配
+├── Presentation/                 # Cocos 场景、UI、输入和动画表现
+│   ├── EnterGameView             # 进入游戏页面背景与进入游戏按钮（已实现）
+│   ├── MainSceneView             # 单场景表现根节点（已实现）
+│   ├── BossView                  # Boss 贴图、血条和受击表现
+│   ├── GoldView                  # 金币数量和奖励表现
+│   ├── UpgradeView               # 升级项目、等级和价格界面
+│   ├── StageView                 # 关卡和通关状态界面
+│   ├── PixelSpriteView           # 像素 Sprite 和帧动画表现
+│   └── GameViewAdapter           # 场景节点与各 View 的装配
 ├── Infrastructure/
 │   ├── Save/                     # 存档、加载和版本迁移
 │   ├── Config/                   # Boss、关卡和升级配置读取
