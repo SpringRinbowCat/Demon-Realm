@@ -1,11 +1,14 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <vector>
 
 #include "cocos2d.h"
+#include "ui/CocosGUI.h"
 
 #include "Application/BattleSnapshot.hpp"
+#include "Presentation/HeroCardView.hpp"
 
 namespace DemonRealm
 {
@@ -41,31 +44,15 @@ enum class BattleBottomBarItem
 /// 线程要求：只能在主线程创建、访问和销毁。
 class BattleView : public cocos2d::Node
 {
-private:
-    /// 单张英雄卡片上会随战斗变化的文字。
-    ///
-    /// 只保存非拥有引用，节点的生命周期由卡片节点树持有。
-    struct HeroCardLabels
-    {
-        /// 等级文字。
-        cocos2d::Label* level = nullptr;
-
-        /// 攻击力文字。
-        cocos2d::Label* attack = nullptr;
-
-        /// 攻击间隔文字。
-        cocos2d::Label* attackInterval = nullptr;
-
-        /// 已解锁技能文字。
-        cocos2d::Label* skills = nullptr;
-    };
-
 public:
     /// 底部栏点击回调类型；参数为被点击的入口项。
     using BottomBarSelectionCallback = std::function<void(BattleBottomBarItem)>;
 
     /// Boss 点击回调类型。
     using BossTapCallback = std::function<void()>;
+
+    /// 英雄升级请求回调类型；参数为英雄在列表中的序号与升级入口类型。
+    using HeroUpgradeCallback = std::function<void(std::size_t, HeroUpgradeKind)>;
 
     /// 创建战斗页面视图。
     /// 参数 snapshot：页面快照，内部会保存所需数据的副本。
@@ -100,6 +87,13 @@ public:
     /// 参数 callback：上层注入的回调；传入空回调表示点击不做任何处理。
     void setOnBossTapped(const BossTapCallback& callback);
 
+    /// 设置英雄升级请求回调。
+    ///
+    /// 视图不判断金币是否够、也不计算升级后的数值，只回传"玩家想升级哪个英雄的哪一项"。
+    ///
+    /// 参数 callback：上层注入的回调；传入空回调表示只保留日志行为。
+    void setOnHeroUpgradeRequested(const HeroUpgradeCallback& callback);
+
 private:
     /// 铺设战斗背景图，按可见区域居中，不做运行时非整数缩放。
     /// 返回值：背景加载并挂载成功返回 true。
@@ -117,11 +111,15 @@ private:
     /// 返回值：成功返回 true。
     bool _setUpHeroList();
 
-    /// 创建单个英雄卡片节点，包含立绘、等级、攻击力、攻击间隔和已解锁技能。
-    /// 参数 hero：单个英雄的快照数据。
-    /// 参数 labels：该卡片可刷新文字的引用输出。
-    /// 返回值：创建成功返回卡片节点；资源缺失时返回 nullptr。
-    cocos2d::Node* _createHeroCard(const BattleHeroSnapshot& hero, HeroCardLabels& labels);
+    /// 按当前展开状态重排英雄卡片，并更新可滚动内容的高度。
+    void _relayoutHeroList();
+
+    /// 英雄卡片的展开或收起请求响应。
+    ///
+    /// 同一时间只展开一张卡片：英雄栏一屏只放得下三张，多张同时展开会把列表拉得很长。
+    ///
+    /// 参数 heroIndex：被点击的英雄序号。
+    void _onHeroCardToggled(std::size_t heroIndex);
 
     /// 在 Boss 贴图范围内接收点击并回传。
     /// 返回值：监听器注册成功返回 true。
@@ -147,14 +145,20 @@ private:
     /// Boss 贴图；用于判断点击是否落在 Boss 范围内，只保存非拥有引用。
     cocos2d::Sprite* _bossSprite = nullptr;
 
-    /// 每个英雄卡片可刷新的文字，顺序与英雄快照一致。
-    std::vector<HeroCardLabels> _heroCardLabels;
+    /// 英雄栏滚动容器；生命周期由节点树持有，这里只保存非拥有引用。
+    cocos2d::ui::ScrollView* _heroList = nullptr;
+
+    /// 英雄卡片视图，顺序与英雄快照一致；生命周期由节点树持有。
+    std::vector<HeroCardView*> _heroCards;
 
     /// 上层注入的底部栏点击回调；未设置时点击只输出日志。
     BottomBarSelectionCallback _onBottomBarItemSelected;
 
     /// 上层注入的 Boss 点击回调；未设置时点击不做任何处理。
     BossTapCallback _onBossTapped;
+
+    /// 上层注入的英雄升级请求回调；未设置时按钮点击只输出日志。
+    HeroUpgradeCallback _onHeroUpgradeRequested;
 };
 
 }  // namespace DemonRealm

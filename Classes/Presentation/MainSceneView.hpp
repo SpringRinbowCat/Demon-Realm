@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstddef>
+
 #include "cocos2d.h"
 
 #include "Application/BattleController.hpp"
 #include "Presentation/BattleView.hpp"
+#include "Presentation/HeroCardView.hpp"
 
 namespace DemonRealm
 {
@@ -55,6 +58,14 @@ private:
 
     /// Boss 点击响应；转交战斗用例结算点击类技能。
     void _onBossTapped();
+
+    /// 英雄升级请求响应。
+    ///
+    /// 升级规则尚未确定，这里只输出日志；规则落地后改为转交战斗用例。
+    ///
+    /// 参数 heroIndex：英雄在列表中的序号。
+    /// 参数 kind：升级入口类型。
+    void _onHeroUpgradeRequested(std::size_t heroIndex, HeroUpgradeKind kind);
 
     /// 按刷新范围更新战斗页面。
     /// 参数 request：需要刷新的界面范围。

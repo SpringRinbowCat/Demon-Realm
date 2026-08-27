@@ -64,6 +64,8 @@ set(GAME_HEADER
     Classes/Domain/Modifier/ModifierCollection.hpp
     Classes/Domain/Modifier/ModifierTypes.hpp
     Classes/Domain/Numeric/Decimal.hpp
+    Classes/Domain/Progression/HeroUpgradeSystem.hpp
+    Classes/Domain/World/GameWorld.hpp
     Classes/Domain/Random/RandomSource.hpp
     Classes/Domain/Skill/SkillDefinition.hpp
     Classes/Domain/State/BossState.hpp
@@ -73,6 +75,9 @@ set(GAME_HEADER
     Classes/Infrastructure/Config/ConfigService.hpp
     Classes/Infrastructure/Random/TimeSeededRandomSource.hpp
     Classes/Presentation/Format/NumberFormatter.hpp
+    Classes/Presentation/Format/SkillDescriptionFormatter.hpp
+    Classes/Presentation/PixelWidgets.hpp
+    Classes/Presentation/HeroCardView.hpp
     Classes/Presentation/BattleView.hpp
     Classes/Presentation/MainSceneView.hpp
     Classes/Presentation/EnterGameView.hpp
@@ -85,12 +90,17 @@ set(GAME_SOURCE
     Classes/Domain/Modifier/ModifierAggregate.cpp
     Classes/Domain/Modifier/ModifierCollection.cpp
     Classes/Domain/Numeric/Decimal.cpp
+    Classes/Domain/Progression/HeroUpgradeSystem.cpp
+    Classes/Domain/World/GameWorld.cpp
     Classes/Domain/State/BossState.cpp
     Classes/Domain/State/EconomyState.cpp
     Classes/Domain/State/HeroState.cpp
     Classes/Infrastructure/Config/ConfigService.cpp
     Classes/Infrastructure/Random/TimeSeededRandomSource.cpp
     Classes/Presentation/Format/NumberFormatter.cpp
+    Classes/Presentation/Format/SkillDescriptionFormatter.cpp
+    Classes/Presentation/PixelWidgets.cpp
+    Classes/Presentation/HeroCardView.cpp
     Classes/Presentation/BattleView.cpp
     Classes/Presentation/MainSceneView.cpp
     Classes/Presentation/EnterGameView.cpp

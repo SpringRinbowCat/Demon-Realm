@@ -24,6 +24,9 @@ const int kSupportedSchemaVersion = 1;
 /// 技能可解锁的最小英雄等级。
 const int kMinimumUnlockLevel = 1;
 
+/// 英雄等级的最小取值，也是攻击力等级区间的起点。
+const int kMinimumHeroLevel = 1;
+
 /// 支持的技能触发时机标识。
 const char* const kTapAttackTrigger = "tapAttack";
 
@@ -213,7 +216,8 @@ bool parseHeroSkill(const rapidjson::Value& entry, HeroSkillConfig& skill)
     }
 
     if (!readRequiredString(entry, "id", skill.id)
-        || !readRequiredString(entry, "displayName", skill.displayName))
+        || !readRequiredString(entry, "displayName", skill.displayName)
+        || !readRequiredString(entry, "description", skill.description))
     {
         return false;
     }
@@ -247,6 +251,58 @@ bool parseHeroSkill(const rapidjson::Value& entry, HeroSkillConfig& skill)
     return parseHeroSkillEffect(entry["effect"], skill);
 }
 
+/// 解析攻击力等级的分段成长倍率。
+///
+/// 区间必须从 1 级开始、依次相接且不重叠，否则某些等级会取不到倍率，
+/// 升级增量就会出现说不清的跳变，这类问题在运行期很难定位，因此在加载阶段直接拦住。
+///
+/// 参数 entry：英雄配置条目。
+/// 参数 ranges：解析结果输出。
+/// 返回值：区间齐全且连续时返回 true。
+bool parseAttackLevelMultiplierRanges(const rapidjson::Value& entry,
+                                      std::vector<HeroAttackLevelMultiplierRange>& ranges)
+{
+    if (!entry.HasMember("attackLevelMultiplierRanges") || !entry["attackLevelMultiplierRanges"].IsArray()
+        || entry["attackLevelMultiplierRanges"].Empty())
+    {
+        cocos2d::log("[ConfigService] missing or empty attackLevelMultiplierRanges");
+        return false;
+    }
+
+    int expectedMinLevel = kMinimumHeroLevel;
+    for (const rapidjson::Value& rangeEntry : entry["attackLevelMultiplierRanges"].GetArray())
+    {
+        if (!rangeEntry.IsObject() || !rangeEntry.HasMember("minLevel") || !rangeEntry["minLevel"].IsInt()
+            || !rangeEntry.HasMember("maxLevel") || !rangeEntry["maxLevel"].IsInt())
+        {
+            cocos2d::log("[ConfigService] invalid attack level multiplier range entry");
+            return false;
+        }
+
+        HeroAttackLevelMultiplierRange range;
+        range.minLevel = rangeEntry["minLevel"].GetInt();
+        range.maxLevel = rangeEntry["maxLevel"].GetInt();
+        if (range.minLevel != expectedMinLevel || range.maxLevel < range.minLevel)
+        {
+            cocos2d::log("[ConfigService] attack level ranges must start at %d and be continuous, got %d-%d",
+                         expectedMinLevel,
+                         range.minLevel,
+                         range.maxLevel);
+            return false;
+        }
+
+        if (!readRequiredPositiveNumber(rangeEntry, "multiplier", range.multiplier))
+        {
+            return false;
+        }
+
+        expectedMinLevel = range.maxLevel + 1;
+        ranges.push_back(range);
+    }
+
+    return true;
+}
+
 /// 解析单个英雄配置条目，包含技能列表。
 /// 返回值：字段齐全且合法时返回 true。
 bool parseHero(const rapidjson::Value& entry, HeroConfig& hero)
@@ -259,13 +315,27 @@ bool parseHero(const rapidjson::Value& entry, HeroConfig& hero)
 
     if (!readRequiredString(entry, "id", hero.id)
         || !readRequiredString(entry, "displayName", hero.displayName)
+        || !readRequiredString(entry, "description", hero.description)
         || !readRequiredPositiveNumber(entry, "baseAttack", hero.baseAttack)
+        || !readRequiredPositiveNumber(entry, "attackUpgradeBaseGain", hero.attackUpgradeBaseGain)
+        || !readRequiredPositiveNumber(entry, "firstUpgradeGoldCost", hero.firstUpgradeGoldCost)
+        || !readRequiredPositiveNumber(entry, "upgradeCostMultiplier", hero.upgradeCostMultiplier)
         || !readRequiredPositiveNumber(entry, "baseAttackIntervalSeconds", hero.baseAttackIntervalSeconds)
         || !readImageFileName(entry, "icon", hero.iconImageFile)
-        || !readImageFileName(entry, "card", hero.cardImageFile))
+        || !readImageFileName(entry, "card", hero.cardImageFile)
+        || !parseAttackLevelMultiplierRanges(entry, hero.attackLevelMultiplierRanges))
     {
         return false;
     }
+
+    if (!entry.HasMember("baseHeroLevel") || !entry["baseHeroLevel"].IsInt()
+        || entry["baseHeroLevel"].GetInt() < kMinimumHeroLevel)
+    {
+        cocos2d::log("[ConfigService] invalid baseHeroLevel for hero: %s", hero.id.c_str());
+        return false;
+    }
+
+    hero.baseHeroLevel = entry["baseHeroLevel"].GetInt();
 
     if (!entry.HasMember("skills") || !entry["skills"].IsArray())
     {

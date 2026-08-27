@@ -86,6 +86,8 @@
 - [进入游戏按钮按下态](Textures/Pixel/UI/按钮_进入游戏_按下.png)：300×90，RGBA；与常态同规格，明暗关系相反。
 - [底部栏按钮常态](Textures/Pixel/UI/按钮_底部栏_常态.png) 与 [按下态](Textures/Pixel/UI/按钮_底部栏_按下.png)：100×100，RGBA；源图 10×10 像素格按 10 倍放大。五个按钮加四个 10px 间隔正好铺满 540 宽。
 - [金币图标](Textures/Pixel/UI/图标_金币.png)：60×60，RGBA；源图 6×6 像素格按 10 倍放大。
+- [金币小图标](Textures/Pixel/UI/图标_金币_小.png)：30×30，RGBA；由 60×60 版本按最近邻降到 5 倍密度，用于英雄详情里的花费行。
+- [升级按钮常态](Textures/Pixel/UI/按钮_升级_常态.png) 与 [按下态](Textures/Pixel/UI/按钮_升级_按下.png)：180×50，RGBA；源图 18×5 像素格按 10 倍放大，配色与底部栏按钮一致（按下态把高光移到底边）。
 - [英雄卡片面板](Textures/Pixel/UI/面板_英雄卡片.png)：520×110，RGBA；源图 52×11 像素格按 10 倍放大。卡片高度按英雄栏一屏显示三张设计。
 - [沛总战斗卡片立绘](Textures/Pixel/Heroes/hero_1_卡片.png)：80×80，RGBA；16×16 源图按 5 倍最近邻放大，适配压缩后的卡片高度。
 
@@ -120,22 +122,44 @@
 
 ### 英雄配置
 
-当前 [Config/heroes.json](Config/heroes.json) 为 `schemaVersion` 1，包含 id 为 `1` 的“沛总”。英雄对象中的 `attackLevelMultiplierRanges` 用于配置攻击力等级的分段成长倍率：
+当前 [Config/heroes.json](Config/heroes.json) 为 `schemaVersion` 1，包含 id 为 `1` 的“沛总”。
 
-- `minLevel` 和 `maxLevel` 都包含边界。
-- `multiplier` 作用于该区间内攻击力等级的成长。
-- 区间不能重叠，且 `minLevel` 不得大于 `maxLevel`。
-- 英雄等级和攻击力等级是两个独立概念。
+战斗相关字段：
 
-当前配置为攻击力等级 1–30 倍率 `"2.0"`、31–80 倍率 `"1.5"`。`upgradeCostMultiplier` 只表示升级费用增长，不表示攻击力成长倍率。
+- `baseAttack`：单次攻击造成的伤害，必须大于 0。当前为 `"1"`。
+- `baseAttackIntervalSeconds`：自动攻击的间隔秒数，必须大于 0。当前为 `"4.0"`，即每 4 秒造成 1 点伤害并获得 1 金币。
+- `description`：英雄详情里居中展示的介绍文字，必填。
 
-`baseAttack` 与 `baseAttackIntervalSeconds` 是战斗系统实际读取的字段：前者是单次攻击造成的伤害，后者是自动攻击的间隔秒数，两者都必须大于 0。当前配置为 `"1"` 与 `"4.0"`，即每 4 秒造成 1 点伤害并获得 1 金币。
+升级相关字段：
+
+- `baseHeroLevel`：初始英雄等级，必须不小于 1。英雄等级、攻击力等级、攻击速度等级是三个独立的数，攻击力或攻击速度任一项升级都会让英雄等级加一，技能解锁按英雄等级判定。
+- `attackUpgradeBaseGain`：攻击力从 1 级升到 2 级的增量。之后每级的增量按上一次的增量乘以当前攻击力等级所在区间的倍率，因此 `"1"` 配合低段倍率 `"2.0"` 得到 +1、+2、+4、+8 的序列。
+- `attackLevelMultiplierRanges`：攻击力等级的分段成长倍率。
+- `firstUpgradeGoldCost`：首次升级所需金币。
+- `upgradeCostMultiplier`：每次升级后费用的增长倍率。费用只跟英雄等级走，攻击力与攻击速度**共用同一条费用序列**，所以升攻击速度也会让下一次升攻击力变贵。
+
+`attackLevelMultiplierRanges` 的约束：
+
+- `minLevel` 和 `maxLevel` 都包含边界，`minLevel` 不得大于 `maxLevel`。
+- 区间必须从 1 级开始、依次相接且不重叠，否则加载会失败。缺了某段等级会让升级增量出现说不清的跳变。
+- `multiplier` 作用于该区间内攻击力等级的成长，不影响升级费用。
+- 等级超出全部区间时沿用最后一个区间的倍率；想覆盖更高等级就补配置。
+
+当前配置为攻击力等级 1–30 倍率 `"2.0"`、31–80 倍率 `"1.5"`。
+
+攻击速度升级没有对应配置：每次固定缩短当前攻击间隔的 1%（4.0 → 3.96 → 3.9204），这是写在领域层的固定规则。
 
 英雄的 `images` 包含两个字段：`icon` 是 UI 图标（2 倍密度），`card` 是战斗页卡片立绘（10 倍密度）。
 
 ### 技能配置
 
-`skills` 每项包含 `id`、`unlockLevel`、`displayName`、`description`、`trigger` 和 `effect`。战斗页只展示 `unlockLevel` 不大于当前英雄等级的技能名称，也只有已解锁的技能会真的生效。
+`skills` 每项包含 `id`、`unlockLevel`、`displayName`、`description`、`trigger` 和 `effect`。英雄卡片折叠时只列出已解锁的技能名称，展开后的技能介绍会列出全部技能并对未解锁的标注解锁等级；生效范围只包含已解锁的技能。`description` 里可以用**大括号**写出数值来源，展示时会替换成当前英雄的实际数值：
+
+- 变量：`hero_<英雄id>_Attack`、`hero_<英雄id>_AttackInterval`、`hero_<英雄id>_HeroLevel`、`hero_<英雄id>_AttackLevel`、`hero_<英雄id>_AttackIntervalLevel`。
+- 数字：直接写十进制数字，例如 `50`、`0.5`。
+- 运算：乘号与除号，按从左到右结合；不支持加减与嵌套括号。
+
+例如 `造成等同于{hero_1_Attack}的伤害` 在攻击力为 2 时显示成「造成等同于2的伤害」，`{hero_1_AttackLevel*hero_1_HeroLevel/50}` 在两个等级都是 2 时显示成 0.08。求值失败（未知变量、引用别的英雄、除数为 0）时保留原样的大括号内容，让配置问题在界面上直接可见。
 
 `trigger` 是触发时机，当前只支持：
 

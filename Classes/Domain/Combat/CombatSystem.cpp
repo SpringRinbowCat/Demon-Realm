@@ -5,13 +5,8 @@
 namespace DemonRealm
 {
 
-CombatSystem::CombatSystem(const Decimal& bossMaxHp,
-                           std::vector<HeroState> heroes,
-                           std::unique_ptr<RandomSource> randomSource)
-    : _bossState(bossMaxHp)
-    , _economyState()
-    , _heroes(std::move(heroes))
-    , _globalModifiers()
+CombatSystem::CombatSystem(GameWorld& world, std::unique_ptr<RandomSource> randomSource)
+    : _world(world)
     , _randomSource(std::move(randomSource))
 {
 }
@@ -19,14 +14,14 @@ CombatSystem::CombatSystem(const Decimal& bossMaxHp,
 CombatTickReport CombatSystem::resolveTapAttack()
 {
     CombatTickReport report;
-    if (_bossState.isDefeated())
+    if (_world.getBoss().isDefeated())
     {
         return report;
     }
 
-    _refreshHeroDerivedAttributes();
+    _world.refreshHeroDerivedAttributes();
 
-    for (HeroState& hero : _heroes)
+    for (HeroState& hero : _world.getHeroes())
     {
         for (const SkillDefinition& skill : hero.getSkills())
         {
@@ -36,14 +31,14 @@ CombatTickReport CombatSystem::resolveTapAttack()
             }
 
             _resolveTapSkill(hero, skill, report);
-            if (_bossState.isDefeated())
+            if (_world.getBoss().isDefeated())
             {
                 report.bossDefeatedThisTick = true;
                 break;
             }
         }
 
-        if (_bossState.isDefeated())
+        if (_world.getBoss().isDefeated())
         {
             break;
         }
@@ -52,7 +47,7 @@ CombatTickReport CombatSystem::resolveTapAttack()
     // 成长类效果改的是基础数值，最终属性要立刻重算，否则调用方读到的仍是本次结算前的旧值。
     if (report.heroAttributesChanged)
     {
-        _refreshHeroDerivedAttributes();
+        _world.refreshHeroDerivedAttributes();
     }
 
     return report;
@@ -61,14 +56,14 @@ CombatTickReport CombatSystem::resolveTapAttack()
 CombatTickReport CombatSystem::advance(double deltaSeconds)
 {
     CombatTickReport report;
-    if (deltaSeconds <= 0.0 || _bossState.isDefeated())
+    if (deltaSeconds <= 0.0 || _world.getBoss().isDefeated())
     {
         return report;
     }
 
-    _refreshHeroDerivedAttributes();
+    _world.refreshHeroDerivedAttributes();
 
-    for (HeroState& hero : _heroes)
+    for (HeroState& hero : _world.getHeroes())
     {
         const unsigned long long attackCount = hero.advanceAutoAttack(deltaSeconds);
         if (attackCount == 0)
@@ -77,7 +72,7 @@ CombatTickReport CombatSystem::advance(double deltaSeconds)
         }
 
         _resolveHeroAttacks(hero, attackCount, report);
-        if (_bossState.isDefeated())
+        if (_world.getBoss().isDefeated())
         {
             // Boss 已死，本次推进不再结算其他英雄的攻击，避免凭空产出金币。
             // 关卡推进尚未实现，后续由关卡系统重置 Boss 状态。
@@ -91,45 +86,32 @@ CombatTickReport CombatSystem::advance(double deltaSeconds)
 
 const Decimal& CombatSystem::getBossRemainingHp() const
 {
-    return _bossState.getRemainingHp();
+    return _world.getBoss().getRemainingHp();
 }
 
 const Decimal& CombatSystem::getGoldAmount() const
 {
-    return _economyState.getGoldAmount();
+    return _world.getEconomy().getGoldAmount();
 }
 
 bool CombatSystem::isBossDefeated() const
 {
-    return _bossState.isDefeated();
+    return _world.getBoss().isDefeated();
 }
 
 const std::vector<HeroState>& CombatSystem::getHeroes() const
 {
-    return _heroes;
+    return _world.getHeroes();
 }
 
 ModifierCollection& CombatSystem::getGlobalModifiers()
 {
-    return _globalModifiers;
+    return _world.getGlobalModifiers();
 }
 
 const ModifierCollection& CombatSystem::getGlobalModifiers() const
 {
-    return _globalModifiers;
-}
-
-void CombatSystem::_refreshHeroDerivedAttributes()
-{
-    GlobalHeroModifiers globalModifiers;
-    globalModifiers.attack = _globalModifiers.getAggregate(ModifierTarget::HeroAttack);
-    globalModifiers.attackIntervalSeconds = _globalModifiers.getAggregate(ModifierTarget::AttackIntervalSeconds);
-    globalModifiers.revision = _globalModifiers.getRevision();
-
-    for (HeroState& hero : _heroes)
-    {
-        hero.refreshDerivedAttributes(globalModifiers);
-    }
+    return _world.getGlobalModifiers();
 }
 
 void CombatSystem::_resolveHeroAttacks(const HeroState& hero,
@@ -147,14 +129,14 @@ void CombatSystem::_applyDamage(const Decimal& damage, CombatTickReport& report)
         return;
     }
 
-    const Decimal appliedDamage = _bossState.applyDamage(damage);
+    const Decimal appliedDamage = _world.getBoss().applyDamage(damage);
     if (appliedDamage.isZero())
     {
         return;
     }
 
     const Decimal goldReward =
-        _economyState.addGoldFromDamage(appliedDamage, _globalModifiers.getAggregate(ModifierTarget::GoldGain));
+        _world.getEconomy().addGoldFromDamage(appliedDamage, _world.getGlobalModifiers().getAggregate(ModifierTarget::GoldGain));
 
     report.damageDealt = report.damageDealt.add(appliedDamage);
     report.goldGained = report.goldGained.add(goldReward);

@@ -8,16 +8,16 @@
 #include "Domain/Numeric/Decimal.hpp"
 #include "Domain/Random/RandomSource.hpp"
 #include "Domain/Skill/SkillDefinition.hpp"
-#include "Domain/State/BossState.hpp"
-#include "Domain/State/EconomyState.hpp"
 #include "Domain/State/HeroState.hpp"
+#include "Domain/World/GameWorld.hpp"
 
 namespace DemonRealm
 {
 
 /// 战斗结算系统。
 ///
-/// 职责：持有 Boss、经济和英雄状态，按时间推进自动攻击，并把伤害与金币结算到状态上。
+/// 职责：按时间推进自动攻击，并把伤害与金币结算到世界状态上。状态本身由 `GameWorld`
+/// 持有，本类只引用；因此升级、关卡这些系统可以操作同一份状态而不必经过战斗系统。
 /// 所有伤害来源最终都要经过本类结算，后续的点击攻击和技能伤害也应在这里加入对应入口，
 /// 不允许绕过本类直接改血量或金币。
 ///
@@ -35,12 +35,9 @@ class CombatSystem
 {
 public:
     /// 构造战斗系统。
-    /// 参数 bossMaxHp：当前 Boss 的最大血量。
-    /// 参数 heroes：已召唤英雄的初始状态，顺序即结算顺序。
+    /// 参数 world：世界状态，本类只引用不拥有，必须比本类活得更久。
     /// 参数 randomSource：概率类技能使用的随机源，不能为空，由本类持有。
-    CombatSystem(const Decimal& bossMaxHp,
-                 std::vector<HeroState> heroes,
-                 std::unique_ptr<RandomSource> randomSource);
+    CombatSystem(GameWorld& world, std::unique_ptr<RandomSource> randomSource);
 
     /// 按时间推进自动攻击。
     /// 参数 deltaSeconds：距上次推进的秒数，非正数直接返回空结果。
@@ -74,9 +71,6 @@ public:
     const ModifierCollection& getGlobalModifiers() const;
 
 private:
-    /// 按最新的全局修正刷新全部英雄的派生属性。
-    void _refreshHeroDerivedAttributes();
-
     /// 结算某个英雄本次到期的全部攻击。
     /// 参数 hero：发起攻击的英雄。
     /// 参数 attackCount：到期的攻击次数，必须大于 0。
@@ -105,17 +99,8 @@ private:
                               const SkillAttackGrowthEffect& effect,
                               CombatTickReport& report);
 
-    /// Boss 状态。
-    BossState _bossState;
-
-    /// 经济状态。
-    EconomyState _economyState;
-
-    /// 已召唤英雄状态，顺序即结算顺序。
-    std::vector<HeroState> _heroes;
-
-    /// 作用于全体英雄与全局产出的修正集合。
-    ModifierCollection _globalModifiers;
+    /// 世界状态，非拥有引用。
+    GameWorld& _world;
 
     /// 概率类技能使用的随机源。
     std::unique_ptr<RandomSource> _randomSource;

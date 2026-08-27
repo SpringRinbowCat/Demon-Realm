@@ -10,18 +10,12 @@
 #include "ui/CocosGUI.h"
 
 #include "Presentation/Format/NumberFormatter.hpp"
+#include "Presentation/PixelWidgets.hpp"
 
 namespace DemonRealm
 {
 namespace
 {
-
-/// 资源目录前缀，均相对 Resources 根目录。
-/// 目录拼接暂时留在表现层；接入 Infrastructure 资源模块后再收口到那里。
-const char* const kBackgroundDirectory = "Textures/Pixel/Backgrounds/";
-const char* const kBossDirectory = "Textures/Pixel/Bosses/";
-const char* const kHeroDirectory = "Textures/Pixel/Heroes/";
-const char* const kUiDirectory = "Textures/Pixel/UI/";
 
 /// 金币图标文件名。
 const char* const kGoldIconImageFile = "图标_金币.png";
@@ -29,12 +23,6 @@ const char* const kGoldIconImageFile = "图标_金币.png";
 /// 底部栏按钮贴图文件名。
 const char* const kBottomBarNormalImageFile = "按钮_底部栏_常态.png";
 const char* const kBottomBarPressedImageFile = "按钮_底部栏_按下.png";
-
-/// 英雄卡片面板贴图文件名。
-const char* const kHeroCardPanelImageFile = "面板_英雄卡片.png";
-
-/// 文字使用的系统字体名；项目暂未接入像素字体资源，中文依赖系统字体回退。
-const char* const kFontName = "Arial";
 
 /// 设计分辨率，与像素资源基准一致。
 const float kDesignWidth = 540.0F;
@@ -59,22 +47,9 @@ const float kHeroListBottomY = 120.0F;
 const float kHeroListHeight = 360.0F;
 const float kHeroListWidth = 540.0F;
 
-/// 单个英雄卡片布局，卡片尺寸与 面板_英雄卡片.png 一致。
+/// 英雄卡片宽度与间隔；卡片内部布局由 HeroCardView 负责。
 const float kHeroCardWidth = 520.0F;
-const float kHeroCardHeight = 110.0F;
 const float kHeroCardGap = 10.0F;
-const float kHeroPortraitCenterX = 60.0F;
-
-/// 卡片内文字的固定列位置。
-/// 英雄名和等级各自占一列，不靠空格拉开距离，保证多条英雄栏之间名字对齐、等级也对齐。
-const float kHeroNameLeftX = 120.0F;
-const float kHeroLevelLeftX = 300.0F;
-
-/// 卡片内文字的行位置；共四行：名称与等级、攻击力、攻击间隔、已解锁技能。
-const float kHeroFirstLineY = 88.0F;
-const float kHeroLineSpacing = 23.0F;
-const float kHeroNameFontSize = 20.0F;
-const float kHeroStatFontSize = 16.0F;
 
 /// 底部栏布局。
 const float kBottomBarButtonSize = 100.0F;
@@ -93,9 +68,6 @@ const int kGoldBarZOrder = 40;
 /// 文字颜色，取自项目既有调色板。
 const cocos2d::Color3B kGoldTextColor(255, 220, 61);
 const cocos2d::Color3B kBossHpTextColor(255, 173, 28);
-const cocos2d::Color3B kHeroNameTextColor(255, 220, 61);
-const cocos2d::Color3B kHeroStatTextColor(240, 230, 225);
-const cocos2d::Color3B kHeroSkillTextColor(255, 173, 28);
 const cocos2d::Color3B kBottomBarActiveTextColor(255, 220, 61);
 const cocos2d::Color3B kBottomBarInactiveTextColor(200, 190, 185);
 
@@ -106,25 +78,6 @@ struct BottomBarEntry
     const char* label;
 };
 
-/// 英雄卡片内的一条文字，位置按列和行分别固定。
-struct HeroCardTextLine
-{
-    /// 文字内容。
-    std::string text;
-
-    /// 左对齐的列位置，卡片内局部坐标。
-    float leftX;
-
-    /// 行位置，卡片内局部坐标。
-    float lineY;
-
-    /// 字号。
-    float fontSize;
-
-    /// 文字颜色。
-    cocos2d::Color3B color;
-};
-
 /// 底部栏入口顺序；当前只有战斗页面已实现，其余为占位入口。
 const BottomBarEntry kBottomBarEntries[] = {
     {BattleBottomBarItem::Battle, "战斗"},
@@ -133,21 +86,6 @@ const BottomBarEntry kBottomBarEntries[] = {
     {BattleBottomBarItem::Treasures, "宝物"},
     {BattleBottomBarItem::Settings, "设置"},
 };
-
-/// 像素贴图统一使用最近邻采样，避免线性过滤模糊像素格。
-void applyPixelTextureFilter(cocos2d::Sprite* sprite)
-{
-    if (sprite == nullptr)
-    {
-        return;
-    }
-
-    cocos2d::Texture2D* texture = sprite->getTexture();
-    if (texture != nullptr)
-    {
-        texture->setAliasTexParameters();
-    }
-}
 
 /// 按设计坐标计算节点位置。
 /// 参数 designX/designY：以可见区域左下角为原点的设计坐标。
@@ -161,65 +99,6 @@ cocos2d::Vec2 layoutPosition(float designX, float designY)
 
     const cocos2d::Vec2 visibleOrigin = director->getVisibleOrigin();
     return cocos2d::Vec2(visibleOrigin.x + designX, visibleOrigin.y + designY);
-}
-
-/// 创建像素贴图精灵并设置最近邻采样。
-/// 返回值：加载失败时返回 nullptr。
-cocos2d::Sprite* createPixelSprite(const std::string& path)
-{
-    cocos2d::Sprite* sprite = cocos2d::Sprite::create(path);
-    if (sprite == nullptr)
-    {
-        cocos2d::log("[BattleView] failed to load image: %s", path.c_str());
-        return nullptr;
-    }
-
-    applyPixelTextureFilter(sprite);
-    return sprite;
-}
-
-/// 创建系统字体文字节点。
-/// 返回值：创建失败时返回 nullptr。
-cocos2d::Label* createLabel(const std::string& text, float fontSize, const cocos2d::Color3B& color)
-{
-    cocos2d::Label* label = cocos2d::Label::createWithSystemFont(text, kFontName, fontSize);
-    if (label == nullptr)
-    {
-        cocos2d::log("[BattleView] failed to create label: %s", text.c_str());
-        return nullptr;
-    }
-
-    label->setTextColor(cocos2d::Color4B(color));
-    return label;
-}
-
-/// 把攻击间隔格式化为展示文字，小数位最少 2 位、最多 4 位。
-/// 参数 canonicalSeconds：规范化定点小数字符串。
-std::string formatIntervalSeconds(const std::string& canonicalSeconds)
-{
-    return NumberFormatter::formatSecondsWithTrimmedFraction(canonicalSeconds) + "秒";
-}
-
-/// 拼接已解锁技能名；没有已解锁技能时返回占位文字。
-std::string joinUnlockedSkillNames(const std::vector<std::string>& skillNames)
-{
-    if (skillNames.empty())
-    {
-        return "无";
-    }
-
-    std::string joined;
-    for (const std::string& name : skillNames)
-    {
-        if (!joined.empty())
-        {
-            joined += "、";
-        }
-
-        joined += name;
-    }
-
-    return joined;
 }
 
 }  // namespace
@@ -321,7 +200,7 @@ void BattleView::updateHeroes(const std::vector<BattleHeroSnapshot>& heroes)
 {
     // 快照数量与卡片数量不一致说明英雄列表发生了增删，这需要重建卡片而不是改文字；
     // 召唤新英雄的流程尚未实现，这里只记录并跳过，避免把数值写到错位的卡片上。
-    if (heroes.size() != _heroCardLabels.size())
+    if (heroes.size() != _heroCards.size())
     {
         cocos2d::log("[BattleView] hero count changed; rebuilding the hero list is not implemented yet");
         return;
@@ -329,32 +208,13 @@ void BattleView::updateHeroes(const std::vector<BattleHeroSnapshot>& heroes)
 
     for (std::size_t index = 0; index < heroes.size(); ++index)
     {
-        const BattleHeroSnapshot& hero = heroes[index];
-        const BattleHeroSnapshot& previous = _snapshot.heroes[index];
-        const HeroCardLabels& labels = _heroCardLabels[index];
-
-        if (labels.level != nullptr && hero.level != previous.level)
-        {
-            labels.level->setString(cocos2d::StringUtils::format("等级：%d", hero.level));
-        }
-
-        if (labels.attack != nullptr && hero.attack != previous.attack)
-        {
-            labels.attack->setString("攻击力：" + NumberFormatter::formatIntegerWithGroups(hero.attack));
-        }
-
-        if (labels.attackInterval != nullptr && hero.attackIntervalSeconds != previous.attackIntervalSeconds)
-        {
-            labels.attackInterval->setString("攻击间隔：" + formatIntervalSeconds(hero.attackIntervalSeconds));
-        }
-
-        if (labels.skills != nullptr && hero.unlockedSkillNames != previous.unlockedSkillNames)
-        {
-            labels.skills->setString("技能：" + joinUnlockedSkillNames(hero.unlockedSkillNames));
-        }
+        _heroCards[index]->updateHero(heroes[index]);
     }
 
     _snapshot.heroes = heroes;
+
+    // 升级会重建详情区，展开中的卡片高度可能因此变化，重排一次保证卡片不重叠。
+    _relayoutHeroList();
 }
 
 void BattleView::setOnBottomBarItemSelected(const BottomBarSelectionCallback& callback)
@@ -367,10 +227,15 @@ void BattleView::setOnBossTapped(const BossTapCallback& callback)
     _onBossTapped = callback;
 }
 
+void BattleView::setOnHeroUpgradeRequested(const HeroUpgradeCallback& callback)
+{
+    _onHeroUpgradeRequested = callback;
+}
+
 bool BattleView::_setUpBackground()
 {
     cocos2d::Sprite* background =
-        createPixelSprite(std::string(kBackgroundDirectory) + _snapshot.backgroundImageFile);
+        PixelWidgets::createSprite(std::string(PixelWidgets::kBackgroundDirectory) + _snapshot.backgroundImageFile);
     if (background == nullptr)
     {
         return false;
@@ -384,7 +249,7 @@ bool BattleView::_setUpBackground()
 
 bool BattleView::_setUpGoldBar()
 {
-    cocos2d::Sprite* goldIcon = createPixelSprite(std::string(kUiDirectory) + kGoldIconImageFile);
+    cocos2d::Sprite* goldIcon = PixelWidgets::createSprite(std::string(PixelWidgets::kUiDirectory) + kGoldIconImageFile);
     if (goldIcon == nullptr)
     {
         return false;
@@ -394,7 +259,7 @@ bool BattleView::_setUpGoldBar()
     addChild(goldIcon, kGoldBarZOrder);
 
     cocos2d::Label* goldAmount =
-        createLabel(NumberFormatter::formatIntegerWithGroups(_snapshot.status.goldAmount),
+        PixelWidgets::createLabel(NumberFormatter::formatIntegerWithGroups(_snapshot.status.goldAmount),
                     kGoldFontSize,
                     kGoldTextColor);
     if (goldAmount == nullptr)
@@ -411,7 +276,7 @@ bool BattleView::_setUpGoldBar()
 
 bool BattleView::_setUpBossArea()
 {
-    cocos2d::Sprite* boss = createPixelSprite(std::string(kBossDirectory) + _snapshot.bossImageFile);
+    cocos2d::Sprite* boss = PixelWidgets::createSprite(std::string(PixelWidgets::kBossDirectory) + _snapshot.bossImageFile);
     if (boss == nullptr)
     {
         return false;
@@ -422,7 +287,7 @@ bool BattleView::_setUpBossArea()
     _bossSprite = boss;
 
     cocos2d::Label* remainingHp =
-        createLabel(NumberFormatter::formatIntegerWithGroups(_snapshot.status.bossRemainingHp),
+        PixelWidgets::createLabel(NumberFormatter::formatIntegerWithGroups(_snapshot.status.bossRemainingHp),
                     kBossHpFontSize,
                     kBossHpTextColor);
     if (remainingHp == nullptr)
@@ -434,91 +299,6 @@ bool BattleView::_setUpBossArea()
     addChild(remainingHp, kBossZOrder);
     _bossRemainingHpLabel = remainingHp;
     return true;
-}
-
-cocos2d::Node* BattleView::_createHeroCard(const BattleHeroSnapshot& hero, HeroCardLabels& labels)
-{
-    cocos2d::Node* card = cocos2d::Node::create();
-    if (card == nullptr)
-    {
-        cocos2d::log("[BattleView] failed to create hero card node");
-        return nullptr;
-    }
-
-    card->setContentSize(cocos2d::Size(kHeroCardWidth, kHeroCardHeight));
-
-    cocos2d::Sprite* panel = createPixelSprite(std::string(kUiDirectory) + kHeroCardPanelImageFile);
-    cocos2d::Sprite* portrait = createPixelSprite(std::string(kHeroDirectory) + hero.cardImageFile);
-    if (panel == nullptr || portrait == nullptr)
-    {
-        return nullptr;
-    }
-
-    panel->setPosition(cocos2d::Vec2(kHeroCardWidth * kCenterFactor, kHeroCardHeight * kCenterFactor));
-    card->addChild(panel);
-    portrait->setPosition(cocos2d::Vec2(kHeroPortraitCenterX, kHeroCardHeight * kCenterFactor));
-    card->addChild(portrait);
-
-    // 第一行的名称与等级各自占固定列；攻击力与攻击间隔各占一行。
-    const float nameRowY = kHeroFirstLineY;
-    const float attackRowY = kHeroFirstLineY - kHeroLineSpacing;
-    const float intervalRowY = kHeroFirstLineY - kHeroLineSpacing * 2.0F;
-    const float skillRowY = kHeroFirstLineY - kHeroLineSpacing * 3.0F;
-
-    const std::vector<HeroCardTextLine> lines = {
-        {hero.displayName, kHeroNameLeftX, nameRowY, kHeroNameFontSize, kHeroNameTextColor},
-        {cocos2d::StringUtils::format("等级：%d", hero.level),
-         kHeroLevelLeftX,
-         nameRowY,
-         kHeroNameFontSize,
-         kHeroNameTextColor},
-        {"攻击力：" + NumberFormatter::formatIntegerWithGroups(hero.attack),
-         kHeroNameLeftX,
-         attackRowY,
-         kHeroStatFontSize,
-         kHeroStatTextColor},
-        {"攻击间隔：" + formatIntervalSeconds(hero.attackIntervalSeconds),
-         kHeroNameLeftX,
-         intervalRowY,
-         kHeroStatFontSize,
-         kHeroStatTextColor},
-        {"技能：" + joinUnlockedSkillNames(hero.unlockedSkillNames),
-         kHeroNameLeftX,
-         skillRowY,
-         kHeroStatFontSize,
-         kHeroSkillTextColor},
-    };
-
-    // 与上面的行顺序一致：名称、等级、攻击力、攻击间隔、技能；名称不随战斗变化，无需保存。
-    cocos2d::Label** const refreshableLabels[] = {
-        nullptr,
-        &labels.level,
-        &labels.attack,
-        &labels.attackInterval,
-        &labels.skills,
-    };
-
-    for (std::size_t index = 0; index < lines.size(); ++index)
-    {
-        const HeroCardTextLine& line = lines[index];
-        cocos2d::Label* label = createLabel(line.text, line.fontSize, line.color);
-        if (label == nullptr)
-        {
-            return nullptr;
-        }
-
-        label->setAnchorPoint(cocos2d::Vec2(0.0F, kCenterFactor));
-        label->setPosition(cocos2d::Vec2(line.leftX, line.lineY));
-        card->addChild(label);
-
-        if (index < sizeof(refreshableLabels) / sizeof(refreshableLabels[0])
-            && refreshableLabels[index] != nullptr)
-        {
-            *refreshableLabels[index] = label;
-        }
-    }
-
-    return card;
 }
 
 bool BattleView::_setUpHeroList()
@@ -534,31 +314,78 @@ bool BattleView::_setUpHeroList()
     heroList->setContentSize(cocos2d::Size(kHeroListWidth, kHeroListHeight));
     heroList->setPosition(layoutPosition(0.0F, kHeroListBottomY));
     heroList->setBounceEnabled(true);
+    addChild(heroList, kHeroCardZOrder);
+    _heroList = heroList;
 
-    // 内容高度不足一屏时按可见高度处理，避免卡片被顶到可见区域之外。
-    const float cardCount = static_cast<float>(_snapshot.heroes.size());
-    const float requiredHeight = cardCount * (kHeroCardHeight + kHeroCardGap) + kHeroCardGap;
-    const float innerHeight = std::max(requiredHeight, kHeroListHeight);
-    heroList->setInnerContainerSize(cocos2d::Size(kHeroListWidth, innerHeight));
-
-    _heroCardLabels.assign(_snapshot.heroes.size(), HeroCardLabels());
+    _heroCards.clear();
+    _heroCards.reserve(_snapshot.heroes.size());
     for (std::size_t index = 0; index < _snapshot.heroes.size(); ++index)
     {
-        cocos2d::Node* card = _createHeroCard(_snapshot.heroes[index], _heroCardLabels[index]);
+        HeroCardView* card = HeroCardView::create(_snapshot.heroes[index]);
         if (card == nullptr)
         {
             return false;
         }
 
-        // 卡片从上往下排列，第一个英雄在列表顶部。
-        const float cardBottomY = innerHeight - kHeroCardGap - kHeroCardHeight
-            - static_cast<float>(index) * (kHeroCardHeight + kHeroCardGap);
-        card->setPosition(cocos2d::Vec2((kHeroListWidth - kHeroCardWidth) * kCenterFactor, cardBottomY));
+        card->setOnToggleRequested([this, index]() { _onHeroCardToggled(index); });
+        card->setOnUpgradeRequested([this, index](HeroUpgradeKind kind) {
+            if (_onHeroUpgradeRequested)
+            {
+                _onHeroUpgradeRequested(index, kind);
+            }
+        });
+
         heroList->addChild(card);
+        _heroCards.push_back(card);
     }
 
-    addChild(heroList, kHeroCardZOrder);
+    _relayoutHeroList();
     return true;
+}
+
+void BattleView::_relayoutHeroList()
+{
+    if (_heroList == nullptr)
+    {
+        return;
+    }
+
+    float requiredHeight = kHeroCardGap;
+    for (const HeroCardView* card : _heroCards)
+    {
+        requiredHeight += card->getPreferredHeight() + kHeroCardGap;
+    }
+
+    // 内容高度不足一屏时按可见高度处理，避免卡片被顶到可见区域之外。
+    const float innerHeight = std::max(requiredHeight, kHeroListHeight);
+    _heroList->setInnerContainerSize(cocos2d::Size(kHeroListWidth, innerHeight));
+
+    // 卡片从上往下排列，第一个英雄在列表顶部；卡片内容从自身原点向下生长，
+    // 因此这里定位的是每张卡片的顶边。
+    const float cardLeftX = (kHeroListWidth - kHeroCardWidth) * kCenterFactor;
+    float cardTopY = innerHeight - kHeroCardGap;
+    for (HeroCardView* card : _heroCards)
+    {
+        card->setPosition(cocos2d::Vec2(cardLeftX, cardTopY));
+        cardTopY -= card->getPreferredHeight() + kHeroCardGap;
+    }
+}
+
+void BattleView::_onHeroCardToggled(std::size_t heroIndex)
+{
+    if (heroIndex >= _heroCards.size())
+    {
+        return;
+    }
+
+    const bool shouldExpand = !_heroCards[heroIndex]->isExpanded();
+    for (std::size_t index = 0; index < _heroCards.size(); ++index)
+    {
+        // 同一时间只展开一张卡片，避免列表被多份详情撑得过长。
+        _heroCards[index]->setExpanded(index == heroIndex && shouldExpand);
+    }
+
+    _relayoutHeroList();
 }
 
 bool BattleView::_setUpBottomBar()
@@ -568,9 +395,9 @@ bool BattleView::_setUpBottomBar()
     for (std::size_t index = 0; index < entryCount; ++index)
     {
         const BottomBarEntry& entry = kBottomBarEntries[index];
-        cocos2d::Sprite* normalSprite = createPixelSprite(std::string(kUiDirectory) + kBottomBarNormalImageFile);
+        cocos2d::Sprite* normalSprite = PixelWidgets::createSprite(std::string(PixelWidgets::kUiDirectory) + kBottomBarNormalImageFile);
         cocos2d::Sprite* pressedSprite =
-            createPixelSprite(std::string(kUiDirectory) + kBottomBarPressedImageFile);
+            PixelWidgets::createSprite(std::string(PixelWidgets::kUiDirectory) + kBottomBarPressedImageFile);
         if (normalSprite == nullptr || pressedSprite == nullptr)
         {
             return false;
@@ -591,7 +418,7 @@ bool BattleView::_setUpBottomBar()
         }
 
         const bool isCurrentPage = entry.item == BattleBottomBarItem::Battle;
-        cocos2d::Label* label = createLabel(
+        cocos2d::Label* label = PixelWidgets::createLabel(
             entry.label,
             kBottomBarFontSize,
             isCurrentPage ? kBottomBarActiveTextColor : kBottomBarInactiveTextColor);

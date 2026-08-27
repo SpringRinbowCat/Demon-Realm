@@ -43,6 +43,9 @@ struct HeroSkillConfig
     /// 技能展示名称。
     std::string displayName;
 
+    /// 技能说明文字，用于英雄详情里的技能介绍。
+    std::string description;
+
     /// 解锁所需的英雄等级。
     int unlockLevel = 0;
 
@@ -62,6 +65,22 @@ struct HeroSkillConfig
     std::string levelProductDivisor;
 };
 
+/// 攻击力等级的分段成长倍率。
+///
+/// 攻击力升级的增量按"上一次增量 × 当前攻击力等级所在区间的倍率"累乘，
+/// 因此这些区间必须覆盖到玩家可能达到的等级，且相互不重叠。
+struct HeroAttackLevelMultiplierRange
+{
+    /// 区间起始等级，含边界。
+    int minLevel = 0;
+
+    /// 区间结束等级，含边界。
+    int maxLevel = 0;
+
+    /// 该区间内每级的增量倍率，十进制字符串。
+    std::string multiplier;
+};
+
 /// 英雄配置数据。
 struct HeroConfig
 {
@@ -71,8 +90,33 @@ struct HeroConfig
     /// 展示名称。
     std::string displayName;
 
+    /// 英雄说明文字，用于英雄详情里的介绍。
+    std::string description;
+
+    /// 初始英雄等级。
+    ///
+    /// 英雄等级与攻击力等级、攻击速度等级是三个独立的数：攻击力或攻击速度任一项升级，
+    /// 英雄等级都会加一，技能解锁按英雄等级判定。
+    int baseHeroLevel = 0;
+
     /// 基础攻击力，十进制字符串，例如 "1"。
     std::string baseAttack;
+
+    /// 攻击力从 1 级升到 2 级的增量，十进制字符串。
+    ///
+    /// 之后每一级的增量在此基础上按 `attackLevelMultiplierRanges` 的倍率累乘。
+    std::string attackUpgradeBaseGain;
+
+    /// 攻击力等级的分段成长倍率，按配置顺序保留。
+    std::vector<HeroAttackLevelMultiplierRange> attackLevelMultiplierRanges;
+
+    /// 首次升级所需金币，十进制字符串。
+    ///
+    /// 攻击力与攻击速度各自维护一条费用序列，都从这个值起算。
+    std::string firstUpgradeGoldCost;
+
+    /// 每次升级后费用的增长倍率，十进制字符串。
+    std::string upgradeCostMultiplier;
 
     /// 基础攻击间隔，单位秒，十进制字符串，例如 "4.0"；超过 4 位小数的部分会被向下取整。
     std::string baseAttackIntervalSeconds;

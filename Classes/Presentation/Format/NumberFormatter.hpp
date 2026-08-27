@@ -23,6 +23,15 @@ namespace NumberFormatter
 /// 返回值：形如 "0"、"99,999" 的展示文字；输入非法时返回 "0"。
 std::string formatIntegerWithGroups(const std::string& canonicalDecimal);
 
+/// 按紧凑形式展示数值：整数部分加千分位，小数部分去掉全部尾随的 0。
+///
+/// 用于把数值嵌进句子里，例如技能说明中的具体数值。整数值不显示小数点，
+/// "1.0000" 显示为 "1"、"0.0200" 显示为 "0.02"、"1234.5000" 显示为 "1,234.5"。
+///
+/// 参数 canonicalDecimal：规范化定点小数字符串。
+/// 返回值：展示文字；输入非法时返回 "0"。
+std::string formatCompactValue(const std::string& canonicalDecimal);
+
 /// 按秒数展示数值，小数位最少 2 位、最多 4 位。
 ///
 /// 规则：先去掉末尾多余的 0，再保证至少保留 2 位。例如 "4.0000" 显示为 "4.00"，

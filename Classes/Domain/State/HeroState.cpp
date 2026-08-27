@@ -11,25 +11,41 @@ namespace
 /// 单次推进最多结算的攻击次数，double 形式，用于与除法结果比较。
 const double kMaxAttacksPerAdvanceAsDouble = static_cast<double>(HeroState::kMaxAttacksPerAdvance);
 
+/// 攻击速度升级时缩短比例的分母：每次缩短当前攻击间隔的 1%。
+///
+/// 该比例是固定规则而非可调数值，因此留在领域层而不是配置里；若将来需要按英雄区分，
+/// 再移到配置并通过 HeroSetup 传入。
+const unsigned long long kAttackIntervalReductionDivisor = 100;
+
+/// 攻击速度升级时缩短的比例，即 1%。
+Decimal attackIntervalReductionRate()
+{
+    Decimal rate;
+    // 1/100 在 4 位小数下可以精确表示，除数是常量也不会为 0，因此不会失败。
+    static_cast<void>(
+        Decimal::fromCount(1).tryDivide(Decimal::fromCount(kAttackIntervalReductionDivisor), rate));
+    return rate;
+}
+
 }  // namespace
 
-HeroState::HeroState(std::string heroId,
-                     int level,
-                     int attackLevel,
-                     const Decimal& baseAttack,
-                     const Decimal& baseAttackIntervalSeconds,
-                     std::vector<SkillDefinition> skills)
-    : _heroId(std::move(heroId))
-    , _level(level)
-    , _attackLevel(attackLevel)
-    , _skills(std::move(skills))
-    , _baseAttack(baseAttack)
+HeroState::HeroState(HeroSetup setup)
+    : _heroId(std::move(setup.heroId))
+    , _level(setup.heroLevel)
+    , _attackLevel(setup.attackLevel)
+    , _attackIntervalLevel(setup.attackIntervalLevel)
+    , _skills(std::move(setup.skills))
+    , _attackLevelMultiplierRanges(std::move(setup.attackLevelMultiplierRanges))
+    , _nextAttackUpgradeGain(setup.attackUpgradeBaseGain)
+    , _upgradeGoldCost(setup.firstUpgradeGoldCost)
+    , _upgradeCostMultiplier(setup.upgradeCostMultiplier)
+    , _baseAttack(setup.baseAttack)
     , _permanentAttackBonus(Decimal::zero())
-    , _baseAttackIntervalSeconds(baseAttackIntervalSeconds)
+    , _baseAttackIntervalSeconds(setup.baseAttackIntervalSeconds)
     , _modifiers()
-    , _attack(baseAttack)
-    , _attackIntervalSeconds(baseAttackIntervalSeconds)
-    , _attackIntervalSecondsAsDouble(baseAttackIntervalSeconds.toDouble())
+    , _attack(setup.baseAttack)
+    , _attackIntervalSeconds(setup.baseAttackIntervalSeconds)
+    , _attackIntervalSecondsAsDouble(setup.baseAttackIntervalSeconds.toDouble())
     , _cachedLocalRevision(_modifiers.getRevision())
     , _cachedGlobalRevision(0)
     , _derivedAttributesDirty(false)
@@ -94,6 +110,52 @@ int HeroState::getAttackLevel() const
     return _attackLevel;
 }
 
+int HeroState::getAttackIntervalLevel() const
+{
+    return _attackIntervalLevel;
+}
+
+const Decimal& HeroState::getNextAttackUpgradeGain() const
+{
+    return _nextAttackUpgradeGain;
+}
+
+Decimal HeroState::getNextAttackIntervalReduction() const
+{
+    // 按基础攻击间隔计算，而不是含 buff 的最终间隔：升级改的是基础值，buff 由修正另行叠加，
+    // 否则一个临时 buff 会永久改变成长曲线。
+    return _baseAttackIntervalSeconds.multiply(attackIntervalReductionRate());
+}
+
+const Decimal& HeroState::getUpgradeGoldCost() const
+{
+    return _upgradeGoldCost;
+}
+
+void HeroState::applyAttackUpgrade()
+{
+    _baseAttack = _baseAttack.add(_nextAttackUpgradeGain);
+    ++_attackLevel;
+    ++_level;
+
+    // 下一次的增量按新的攻击力等级所在区间累乘：等级 1 升 2 用配置的基础增量，
+    // 等级 2 升 3 起才开始乘倍率。
+    _nextAttackUpgradeGain = _nextAttackUpgradeGain.multiply(_findAttackLevelMultiplier(_attackLevel));
+    _upgradeGoldCost = _upgradeGoldCost.multiply(_upgradeCostMultiplier);
+    _derivedAttributesDirty = true;
+}
+
+void HeroState::applyAttackIntervalUpgrade()
+{
+    _baseAttackIntervalSeconds =
+        _baseAttackIntervalSeconds.subtractClampedToZero(getNextAttackIntervalReduction());
+    ++_attackIntervalLevel;
+    ++_level;
+
+    _upgradeGoldCost = _upgradeGoldCost.multiply(_upgradeCostMultiplier);
+    _derivedAttributesDirty = true;
+}
+
 const std::vector<SkillDefinition>& HeroState::getSkills() const
 {
     return _skills;
@@ -152,6 +214,25 @@ ModifierCollection& HeroState::getModifiers()
 const ModifierCollection& HeroState::getModifiers() const
 {
     return _modifiers;
+}
+
+Decimal HeroState::_findAttackLevelMultiplier(int attackLevel) const
+{
+    if (_attackLevelMultiplierRanges.empty())
+    {
+        return Decimal::one();
+    }
+
+    for (const AttackLevelMultiplierRange& range : _attackLevelMultiplierRanges)
+    {
+        if (attackLevel >= range.minLevel && attackLevel <= range.maxLevel)
+        {
+            return range.multiplier;
+        }
+    }
+
+    // 超出全部区间时沿用最后一个区间的倍率，等级更高时补配置即可覆盖。
+    return _attackLevelMultiplierRanges.back().multiplier;
 }
 
 void HeroState::_recalculateDerivedAttributes(const GlobalHeroModifiers& globalModifiers)

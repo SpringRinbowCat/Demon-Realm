@@ -106,6 +106,29 @@ std::string formatIntegerWithGroups(const std::string& canonicalDecimal)
     return formatted;
 }
 
+std::string formatCompactValue(const std::string& canonicalDecimal)
+{
+    const std::string integerPart = takeIntegerPart(canonicalDecimal);
+    if (!isDigitsOnly(integerPart))
+    {
+        return std::string(kZeroInteger);
+    }
+
+    std::string fractionPart = takeFractionPart(canonicalDecimal);
+    while (!fractionPart.empty() && fractionPart.back() == kZeroDigit)
+    {
+        fractionPart.pop_back();
+    }
+
+    const std::string groupedInteger = formatIntegerWithGroups(canonicalDecimal);
+    if (fractionPart.empty())
+    {
+        return groupedInteger;
+    }
+
+    return groupedInteger + std::string(1, kDecimalPoint) + fractionPart;
+}
+
 std::string formatSecondsWithTrimmedFraction(const std::string& canonicalDecimal)
 {
     const std::string integerPart = takeIntegerPart(canonicalDecimal);

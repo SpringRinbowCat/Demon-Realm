@@ -12,17 +12,21 @@
 - `Domain/Numeric/Decimal`：字符串定点数值类型，承载全部游戏数值。
 - `Domain/Modifier/`：属性修正（buff）模型，`Modifier`、`ModifierAggregate` 与带缓存的 `ModifierCollection`。
 - `Domain/State/`：`BossState`（血量与扣血）、`EconomyState`（金币与金币产出修正）、`HeroState`（基础属性、自身修正、自动攻击计时与派生属性缓存）。
-- `Domain/Combat/CombatSystem`：自动攻击结算，按时间推进伤害与金币，并产出 `CombatTickReport`。
+- `Domain/World/GameWorld`：一局游戏的全部运行时状态（Boss、经济、英雄、全局修正），各领域系统共同操作的对象。
+- `Domain/Combat/CombatSystem`：自动攻击与点击攻击结算，按时间推进伤害与金币，并产出 `CombatTickReport`。
+- `Domain/Progression/HeroUpgradeSystem`：英雄攻击力与攻击速度的升级结算，含费用扣除与升级预览。
 - `Application/BattleController`：战斗页面的用例入口，接收时间推进并产出展示快照。
 - `Infrastructure/Config/ConfigService`：读取并校验 `Resources/Config/` 下的 Boss 与英雄配置，输出内存配置对象。
 - `Presentation/MainSceneView`：单场景宿主的表现根节点，挂载当前页面、在页面之间切换、接收页面回传的请求，并把每帧时间推进转发给战斗用例。
 - `Presentation/EnterGameView`：进入游戏页面，包含背景图和进入游戏按钮。
 - `Presentation/BattleView`：战斗页面，包含顶部金币栏、上半区 Boss 区域、下半区可滑动英雄栏和底部栏入口，并按快照刷新金币与血量。
+- `Presentation/HeroCardView`：单张英雄卡片，折叠信息与可展开的英雄详情。
+- `Presentation/PixelWidgets`：像素风格控件工厂，统一贴图采样、字体与资源目录。
 - `Presentation/Format/NumberFormatter`：数值展示格式化，千分位与秒数小数位裁剪。
 - `Domain/Skill/SkillDefinition`：技能的领域定义，描述触发时机与效果参数。
 - `Domain/Random/RandomSource` 与 `Infrastructure/Random/TimeSeededRandomSource`：概率判定用的随机源接口与按当前时间播种的实现。
 
-尚未实现：`GameRoot`、升级、关卡推进、挂机离线收益、存档和除战斗页外的四个页面。下文中未标注为已实现的类名、数据流和目录职责属于目标设计，不代表现有代码已经完成。
+尚未实现：`GameRoot`、关卡推进、掉落、挂机离线收益、存档和除战斗页外的四个页面。下文中未标注为已实现的类名、数据流和目录职责属于目标设计，不代表现有代码已经完成。
 
 项目已接入 cocos2d-x 4.0，macOS 上可以构建运行；平台入口在仓库根目录的 `proj.ios_mac/mac/main.cpp` 和 `proj.win32/main.cpp`，只负责创建 `GameLauncher` 并进入引擎主循环。构建步骤、架构限制和引擎补丁见 [../README.md](../README.md)。新增或移除源文件时必须同步更新根目录 `CMakeLists.txt` 的源文件列表。
 
@@ -266,6 +270,66 @@ EventUpgradePurchased
 
 刷新范围由 `BattleController::RefreshRequest` 描述：`status` 表示金币或血量变了，`heroes` 表示英雄属性变了。视图按范围只改对应的文字，英雄栏刷新不重建卡片节点，因此不会打断滚动位置。
 
+### 英雄升级（已实现）
+
+升级由 `Domain/Progression/HeroUpgradeSystem` 结算，界面只回传"想升哪个英雄的哪一项"：
+
+```text
+HeroCardView 的升级按钮
+    ↓ 回传英雄序号与升级类型
+MainSceneView::_onHeroUpgradeRequested
+    ↓
+BattleController::onAttackUpgradeRequested / onAttackIntervalUpgradeRequested
+    ↓
+HeroUpgradeSystem
+    ├─ 金币不足或升级已无效果 → 拒绝，不扣钱也不改状态
+    ├─ EconomyState::trySpendGold 扣费
+    ├─ HeroState::applyAttackUpgrade / applyAttackIntervalUpgrade
+    └─ GameWorld::refreshHeroDerivedAttributes 立刻重算派生属性
+    ↓
+RefreshRequest → 刷新金币与英雄栏
+```
+
+三种等级各自独立：
+
+- **英雄等级**：攻击力或攻击速度任一项升级都加一。技能解锁按它判定。
+- **攻击力等级**：只在升级攻击力时加一。
+- **攻击速度等级**：只在升级攻击速度时加一。
+
+数值公式：
+
+- **攻击力增量**：1 级升 2 级加配置的 `attackUpgradeBaseGain`，之后每级的增量按上一次的增量乘以当前攻击力等级所在区间的倍率。base 为 1、低段倍率 2.0 时序列是 +1、+2、+4、+8。
+- **攻击速度**：每次缩短当前基础攻击间隔的 1%，即 4.0 → 3.96 → 3.9204。缩短量随间隔递减，间隔不会归零；缩短量小到 4 位小数放不下时升级会被拒绝，避免白花钱。1% 是固定规则，写在领域层而不是配置里。
+- **费用**：攻击力与攻击速度**共用一条费用序列**，只随英雄等级递增（首次为 `firstUpgradeGoldCost`，每次升级后乘 `upgradeCostMultiplier`）。因此升攻击速度也会让下一次升攻击力变贵。
+
+升级改的是**基础属性**，buff 仍按 `(基础 + 永久成长 + 加法修正) × 乘法修正` 叠加在其上。攻击速度按基础间隔的 1% 计算，避免临时 buff 永久改变成长曲线。
+
+金币是否够由用例判断并写进快照的 `affordable`：界面在不够时把花费显示为红色，点击也会被拒绝。金币每帧都在变，但只有在跨过"买得起"门槛时才会触发英雄栏刷新，避免每帧重建详情。
+
+### 英雄详情面板（已实现界面）
+
+单张卡片由 `Presentation/HeroCardView` 负责，点击折叠区可展开详情，详情自上而下分四块：
+
+1. **攻击力升级**：第一排是「升级攻击力」按钮、当前等级和本次升级的攻击力增量；第二排是花费，金币小图标加数量。
+2. **攻击速度升级**：结构与上一块相同，变化量按“攻击间隔减少多少秒”展示。
+3. **英雄介绍**：居中小字，取配置里英雄的 `description`，按卡片宽度自动换行。
+4. **技能介绍**：列出全部技能的名称与 `description`；未解锁的技能标注「（等级 N 解锁）」并整条置灰。
+
+交互与布局约定：
+
+- **同一时间只展开一张卡片**。英雄栏一屏只放得下三张，多张同时展开会把列表拉得很长、难以定位。
+- 卡片内容**从自身原点向下生长**（原点是卡片左上角，子节点 y 不大于 0）。展开与收起只改变 `getPreferredHeight()`，卡片内部节点不需要重新定位，列表由 `BattleView::_relayoutHeroList` 统一重排并更新可滚动内容高度。
+- 命中区域只取折叠区：详情里的升级按钮自己处理点击，避免点按钮时顺带收起。
+- 触摸位移超过阈值视为滑动列表，不当作点击，因此拖动英雄栏不会误展开或误收起。
+- 展开内容超出可视区时靠英雄栏自身滚动查看，不额外弹窗。
+
+- 花费在金币不足时显示为红色，此时点击升级按钮会被拒绝。
+- 升级后详情区整块重建（等级、增量、花费、技能说明里的数值都会变，换行行数也可能变），因此刷新英雄栏后会重排一次列表。重建只发生在升级或技能成长时，不在每帧路径上。
+
+技能说明里的数值由 `Presentation/Format/SkillDescriptionFormatter` 填充：配置里用大括号写数值来源，例如 `{hero_1_Attack}`、`{hero_1_AttackLevel*hero_1_HeroLevel/50}`，展示时替换成当前英雄的实际数值。支持变量、数字和乘除，不支持加减与嵌套括号；求值失败时保留原样的大括号内容，让配置问题在界面上直接可见，而不是悄悄显示成 0。
+
+界面用到的通用像素控件（贴图精灵、单行文字、自动换行文字、贴图按钮）统一由 `Presentation/PixelWidgets` 创建，避免每个视图各写一份采样与字体处理。
+
 ### 页面装配与切换链路
 
 ```text
@@ -327,10 +391,11 @@ MainSceneView 决定页面切换（除战斗页外均未实现）
 │   ├── Modifier/                # 属性修正模型与聚合缓存（已实现）
 │   ├── Skill/                   # 技能定义：触发时机与效果参数（已实现）
 │   ├── Random/                  # 概率判定用的随机源接口（已实现）
+│   ├── World/                   # 一局游戏的全部运行时状态（已实现）
 │   ├── State/                   # 玩家、Boss、关卡、金币和升级状态（已实现 Boss/Economy/Hero）
 │   ├── Combat/                  # 点击、挂机、离线攻击和伤害结算（已实现自动攻击）
 │   ├── Economy/                 # 金币收入、消费和经济规则
-│   ├── Progression/             # 关卡推进、解锁和通关奖励
+│   ├── Progression/             # 英雄升级（已实现）、关卡推进、解锁和通关奖励
 │   └── Idle/                    # 在线挂机、离线时间和离线收益
 ├── Application/
 │   ├── BattleController          # 战斗页面用例入口与展示快照（已实现）
@@ -341,8 +406,10 @@ MainSceneView 决定页面切换（除战斗页外均未实现）
 │   └── IdleController            # 处理自动战斗和离线收益领取
 ├── Presentation/                 # Cocos 场景、UI、输入和动画表现
 │   ├── EnterGameView             # 进入游戏页面背景与进入游戏按钮（已实现）
-│   ├── BattleView                # 战斗页面金币栏、Boss、英雄卡与底部栏（已实现）
-│   ├── Format/                   # 数值展示格式化（已实现 NumberFormatter）
+│   ├── BattleView                # 战斗页面金币栏、Boss、英雄栏与底部栏（已实现）
+│   ├── HeroCardView              # 英雄卡片与可展开的英雄详情（已实现）
+│   ├── PixelWidgets              # 像素控件工厂（已实现）
+│   ├── Format/                   # 数值与文案格式化（已实现 NumberFormatter、SkillDescriptionFormatter）
 │   ├── MainSceneView             # 单场景表现根节点（已实现）
 │   ├── BossView                  # Boss 贴图、血条和受击表现
 │   ├── GoldView                  # 金币数量和奖励表现

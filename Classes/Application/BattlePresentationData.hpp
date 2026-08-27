@@ -17,6 +17,12 @@ struct HeroSkillPresentation
 
     /// 技能展示名称。
     std::string displayName;
+
+    /// 技能说明文字。
+    std::string description;
+
+    /// 解锁所需的英雄等级，仅用于在未解锁时告知玩家解锁条件。
+    int unlockLevel = 0;
 };
 
 /// 单个英雄与战斗无关的展示信息。
@@ -30,8 +36,16 @@ struct BattleHeroPresentation
     /// 英雄展示名称。
     std::string displayName;
 
+    /// 英雄说明文字。
+    std::string description;
+
     /// 卡片立绘文件名，不含目录。
     std::string cardImageFile;
+
+    /// 首次升级所需金币，十进制字符串。
+    ///
+    /// 只用于装配英雄状态；实际展示的花费来自升级系统的预览，会随英雄等级递增。
+    std::string firstUpgradeGoldCost;
 
     /// 技能列表，按配置顺序保留；解锁判定按当前等级在产出快照时完成。
     std::vector<HeroSkillPresentation> skills;

@@ -112,6 +112,8 @@ void MainSceneView::_showBattlePage()
     battleView->setOnBottomBarItemSelected(
         [this](BattleBottomBarItem item) { _onBottomBarItemSelected(item); });
     battleView->setOnBossTapped([this]() { _onBossTapped(); });
+    battleView->setOnHeroUpgradeRequested(
+        [this](std::size_t heroIndex, HeroUpgradeKind kind) { _onHeroUpgradeRequested(heroIndex, kind); });
 
     if (_enterGameView != nullptr)
     {
@@ -134,6 +136,20 @@ void MainSceneView::_onBossTapped()
     }
 
     _applyRefreshRequest(_battleController->onBossTapped());
+}
+
+void MainSceneView::_onHeroUpgradeRequested(std::size_t heroIndex, HeroUpgradeKind kind)
+{
+    if (_battleController == nullptr)
+    {
+        return;
+    }
+
+    // 能否升级由用例判断：金币不足或升级已无效果时返回空的刷新范围，界面保持原样。
+    const BattleController::RefreshRequest request = kind == HeroUpgradeKind::Attack
+        ? _battleController->onAttackUpgradeRequested(heroIndex)
+        : _battleController->onAttackIntervalUpgradeRequested(heroIndex);
+    _applyRefreshRequest(request);
 }
 
 void MainSceneView::_applyRefreshRequest(const BattleController::RefreshRequest& request)
