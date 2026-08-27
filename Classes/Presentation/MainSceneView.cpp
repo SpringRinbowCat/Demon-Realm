@@ -67,10 +67,7 @@ void MainSceneView::update(float delta)
         return;
     }
 
-    if (_battleController->advance(static_cast<double>(delta)))
-    {
-        _battleView->updateStatus(_battleController->createStatusSnapshot());
-    }
+    _applyRefreshRequest(_battleController->advance(static_cast<double>(delta)));
 
     if (_battleController->isBossDefeated())
     {
@@ -114,6 +111,7 @@ void MainSceneView::_showBattlePage()
 
     battleView->setOnBottomBarItemSelected(
         [this](BattleBottomBarItem item) { _onBottomBarItemSelected(item); });
+    battleView->setOnBossTapped([this]() { _onBossTapped(); });
 
     if (_enterGameView != nullptr)
     {
@@ -126,6 +124,34 @@ void MainSceneView::_showBattlePage()
 
     // 进入战斗页后才开始推进战斗，进入游戏页停留期间不产生伤害与金币。
     scheduleUpdate();
+}
+
+void MainSceneView::_onBossTapped()
+{
+    if (_battleController == nullptr)
+    {
+        return;
+    }
+
+    _applyRefreshRequest(_battleController->onBossTapped());
+}
+
+void MainSceneView::_applyRefreshRequest(const BattleController::RefreshRequest& request)
+{
+    if (_battleView == nullptr || !request.hasAny())
+    {
+        return;
+    }
+
+    if (request.status)
+    {
+        _battleView->updateStatus(_battleController->createStatusSnapshot());
+    }
+
+    if (request.heroes)
+    {
+        _battleView->updateHeroes(_battleController->createHeroSnapshots());
+    }
 }
 
 void MainSceneView::_onBottomBarItemSelected(BattleBottomBarItem item)

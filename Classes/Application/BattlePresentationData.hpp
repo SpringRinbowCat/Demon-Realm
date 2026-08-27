@@ -7,13 +7,16 @@ namespace DemonRealm
 {
 
 /// 英雄技能的展示信息。
+///
+/// 只保存展示文案：技能的解锁等级与效果由领域层的技能定义描述，解锁判定也在领域层完成，
+/// 避免同一条规则在两处各写一份。
 struct HeroSkillPresentation
 {
+    /// 技能 id，用于与领域层的技能定义对齐。
+    std::string skillId;
+
     /// 技能展示名称。
     std::string displayName;
-
-    /// 解锁所需等级。
-    int unlockLevel = 0;
 };
 
 /// 单个英雄与战斗无关的展示信息。

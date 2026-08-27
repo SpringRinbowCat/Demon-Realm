@@ -64,6 +64,12 @@ public:
     /// 返回值：积。
     Decimal multiply(const Decimal& other) const;
 
+    /// 相除，结果向下取整到 4 位小数。
+    /// 参数 divisor：除数。
+    /// 参数 quotient：商，仅在返回 true 时被写入。
+    /// 返回值：除数不为 0 时返回 true；除数为 0 时返回 false 且不写入结果。
+    bool tryDivide(const Decimal& divisor, Decimal& quotient) const;
+
     /// 比较大小。
     /// 参数 other：比较对象。
     /// 返回值：小于返回 -1，等于返回 0，大于返回 1。

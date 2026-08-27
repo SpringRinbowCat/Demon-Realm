@@ -20,6 +20,9 @@ struct CombatTickReport
     /// 本次推进中 Boss 是否被击败。
     bool bossDefeatedThisTick = false;
 
+    /// 英雄属性是否发生变化，例如技能永久提升了攻击力；需要刷新英雄栏。
+    bool heroAttributesChanged = false;
+
     /// 是否有展示数值发生变化，需要刷新界面。
     bool hasChanges = false;
 };

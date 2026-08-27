@@ -253,8 +253,51 @@ bool BattleView::initWithSnapshot(const BattleSnapshot& snapshot)
 
     _snapshot = snapshot;
 
-    return _setUpBackground() && _setUpGoldBar() && _setUpBossArea() && _setUpHeroList()
-        && _setUpBottomBar();
+    return _setUpBackground() && _setUpGoldBar() && _setUpBossArea() && _setUpBossTapInput()
+        && _setUpHeroList() && _setUpBottomBar();
+}
+
+bool BattleView::_setUpBossTapInput()
+{
+    if (_bossSprite == nullptr)
+    {
+        cocos2d::log("[BattleView] boss sprite is required before wiring tap input");
+        return false;
+    }
+
+    cocos2d::EventListenerTouchOneByOne* listener = cocos2d::EventListenerTouchOneByOne::create();
+    if (listener == nullptr)
+    {
+        cocos2d::log("[BattleView] failed to create boss tap listener");
+        return false;
+    }
+
+    // 只吞掉落在 Boss 贴图上的触摸，其他位置的触摸继续向下传递给英雄栏和底部栏。
+    listener->setSwallowTouches(false);
+    listener->onTouchBegan = [this](cocos2d::Touch* touch, cocos2d::Event* event) {
+        static_cast<void>(event);
+        if (_bossSprite == nullptr || touch == nullptr)
+        {
+            return false;
+        }
+
+        // 命中区域取 Boss 贴图自身的矩形；贴图与本节点在同一坐标系下比较。
+        const cocos2d::Vec2 localPoint = convertToNodeSpace(touch->getLocation());
+        if (!_bossSprite->getBoundingBox().containsPoint(localPoint))
+        {
+            return false;
+        }
+
+        if (_onBossTapped)
+        {
+            _onBossTapped();
+        }
+
+        return true;
+    };
+
+    _eventDispatcher->addEventListenerWithSceneGraphPriority(listener, this);
+    return true;
 }
 
 void BattleView::updateStatus(const BattleStatusSnapshot& status)
@@ -274,9 +317,54 @@ void BattleView::updateStatus(const BattleStatusSnapshot& status)
     _snapshot.status = status;
 }
 
+void BattleView::updateHeroes(const std::vector<BattleHeroSnapshot>& heroes)
+{
+    // 快照数量与卡片数量不一致说明英雄列表发生了增删，这需要重建卡片而不是改文字；
+    // 召唤新英雄的流程尚未实现，这里只记录并跳过，避免把数值写到错位的卡片上。
+    if (heroes.size() != _heroCardLabels.size())
+    {
+        cocos2d::log("[BattleView] hero count changed; rebuilding the hero list is not implemented yet");
+        return;
+    }
+
+    for (std::size_t index = 0; index < heroes.size(); ++index)
+    {
+        const BattleHeroSnapshot& hero = heroes[index];
+        const BattleHeroSnapshot& previous = _snapshot.heroes[index];
+        const HeroCardLabels& labels = _heroCardLabels[index];
+
+        if (labels.level != nullptr && hero.level != previous.level)
+        {
+            labels.level->setString(cocos2d::StringUtils::format("等级：%d", hero.level));
+        }
+
+        if (labels.attack != nullptr && hero.attack != previous.attack)
+        {
+            labels.attack->setString("攻击力：" + NumberFormatter::formatIntegerWithGroups(hero.attack));
+        }
+
+        if (labels.attackInterval != nullptr && hero.attackIntervalSeconds != previous.attackIntervalSeconds)
+        {
+            labels.attackInterval->setString("攻击间隔：" + formatIntervalSeconds(hero.attackIntervalSeconds));
+        }
+
+        if (labels.skills != nullptr && hero.unlockedSkillNames != previous.unlockedSkillNames)
+        {
+            labels.skills->setString("技能：" + joinUnlockedSkillNames(hero.unlockedSkillNames));
+        }
+    }
+
+    _snapshot.heroes = heroes;
+}
+
 void BattleView::setOnBottomBarItemSelected(const BottomBarSelectionCallback& callback)
 {
     _onBottomBarItemSelected = callback;
+}
+
+void BattleView::setOnBossTapped(const BossTapCallback& callback)
+{
+    _onBossTapped = callback;
 }
 
 bool BattleView::_setUpBackground()
@@ -331,6 +419,7 @@ bool BattleView::_setUpBossArea()
 
     boss->setPosition(layoutPosition(kDesignWidth * kCenterFactor, kBossCenterY));
     addChild(boss, kBossZOrder);
+    _bossSprite = boss;
 
     cocos2d::Label* remainingHp =
         createLabel(NumberFormatter::formatIntegerWithGroups(_snapshot.status.bossRemainingHp),
@@ -347,7 +436,7 @@ bool BattleView::_setUpBossArea()
     return true;
 }
 
-cocos2d::Node* BattleView::_createHeroCard(const BattleHeroSnapshot& hero)
+cocos2d::Node* BattleView::_createHeroCard(const BattleHeroSnapshot& hero, HeroCardLabels& labels)
 {
     cocos2d::Node* card = cocos2d::Node::create();
     if (card == nullptr)
@@ -400,8 +489,18 @@ cocos2d::Node* BattleView::_createHeroCard(const BattleHeroSnapshot& hero)
          kHeroSkillTextColor},
     };
 
-    for (const HeroCardTextLine& line : lines)
+    // 与上面的行顺序一致：名称、等级、攻击力、攻击间隔、技能；名称不随战斗变化，无需保存。
+    cocos2d::Label** const refreshableLabels[] = {
+        nullptr,
+        &labels.level,
+        &labels.attack,
+        &labels.attackInterval,
+        &labels.skills,
+    };
+
+    for (std::size_t index = 0; index < lines.size(); ++index)
     {
+        const HeroCardTextLine& line = lines[index];
         cocos2d::Label* label = createLabel(line.text, line.fontSize, line.color);
         if (label == nullptr)
         {
@@ -411,6 +510,12 @@ cocos2d::Node* BattleView::_createHeroCard(const BattleHeroSnapshot& hero)
         label->setAnchorPoint(cocos2d::Vec2(0.0F, kCenterFactor));
         label->setPosition(cocos2d::Vec2(line.leftX, line.lineY));
         card->addChild(label);
+
+        if (index < sizeof(refreshableLabels) / sizeof(refreshableLabels[0])
+            && refreshableLabels[index] != nullptr)
+        {
+            *refreshableLabels[index] = label;
+        }
     }
 
     return card;
@@ -436,9 +541,10 @@ bool BattleView::_setUpHeroList()
     const float innerHeight = std::max(requiredHeight, kHeroListHeight);
     heroList->setInnerContainerSize(cocos2d::Size(kHeroListWidth, innerHeight));
 
+    _heroCardLabels.assign(_snapshot.heroes.size(), HeroCardLabels());
     for (std::size_t index = 0; index < _snapshot.heroes.size(); ++index)
     {
-        cocos2d::Node* card = _createHeroCard(_snapshot.heroes[index]);
+        cocos2d::Node* card = _createHeroCard(_snapshot.heroes[index], _heroCardLabels[index]);
         if (card == nullptr)
         {
             return false;

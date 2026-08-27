@@ -22,6 +22,21 @@ const HeroState* findHeroState(const std::vector<HeroState>& heroes, const std::
     return found == heroes.end() ? nullptr : &(*found);
 }
 
+/// 把战斗结算结果翻译成界面刷新范围。
+///
+/// 金币与血量只在真的产生了伤害或收益时才需要刷新，英雄栏只在英雄属性变化时才需要重建，
+/// 这样空转的帧不会触发任何界面工作。
+///
+/// 参数 report：战斗结算结果。
+/// 返回值：需要刷新的界面范围。
+BattleController::RefreshRequest toRefreshRequest(const CombatTickReport& report)
+{
+    BattleController::RefreshRequest request;
+    request.status = !report.damageDealt.isZero() || !report.goldGained.isZero();
+    request.heroes = report.heroAttributesChanged;
+    return request;
+}
+
 /// 按英雄状态与展示信息构造英雄快照。
 /// 参数 presentation：英雄展示信息。
 /// 参数 heroState：英雄运行时状态。
@@ -35,11 +50,10 @@ BattleHeroSnapshot buildHeroSnapshot(const BattleHeroPresentation& presentation,
     snapshot.attackIntervalSeconds = heroState.getAttackIntervalSeconds().toString();
     snapshot.cardImageFile = presentation.cardImageFile;
 
-    // 技能系统尚未实现，这里只按等级筛选已解锁技能名用于展示；技能效果落地后，
-    // 解锁判定应移入 Domain，并由技能系统向英雄写入对应修正。
+    // 解锁判定由领域层负责，这里只把已解锁技能的展示名取出来。
     for (const HeroSkillPresentation& skill : presentation.skills)
     {
-        if (skill.unlockLevel <= heroState.getLevel())
+        if (heroState.isSkillUnlockedById(skill.skillId))
         {
             snapshot.unlockedSkillNames.push_back(skill.displayName);
         }
@@ -56,10 +70,14 @@ BattleController::BattleController(std::unique_ptr<CombatSystem> combatSystem, B
 {
 }
 
-bool BattleController::advance(double deltaSeconds)
+BattleController::RefreshRequest BattleController::advance(double deltaSeconds)
 {
-    const CombatTickReport report = _combatSystem->advance(deltaSeconds);
-    return report.hasChanges;
+    return toRefreshRequest(_combatSystem->advance(deltaSeconds));
+}
+
+BattleController::RefreshRequest BattleController::onBossTapped()
+{
+    return toRefreshRequest(_combatSystem->resolveTapAttack());
 }
 
 BattleSnapshot BattleController::createSnapshot() const
@@ -68,6 +86,14 @@ BattleSnapshot BattleController::createSnapshot() const
     snapshot.backgroundImageFile = _presentation.backgroundImageFile;
     snapshot.bossImageFile = _presentation.bossImageFile;
     snapshot.status = createStatusSnapshot();
+    snapshot.heroes = createHeroSnapshots();
+    return snapshot;
+}
+
+std::vector<BattleHeroSnapshot> BattleController::createHeroSnapshots() const
+{
+    std::vector<BattleHeroSnapshot> heroSnapshots;
+    heroSnapshots.reserve(_presentation.heroes.size());
 
     const std::vector<HeroState>& heroes = _combatSystem->getHeroes();
     for (const BattleHeroPresentation& heroPresentation : _presentation.heroes)
@@ -79,10 +105,10 @@ BattleSnapshot BattleController::createSnapshot() const
             continue;
         }
 
-        snapshot.heroes.push_back(buildHeroSnapshot(heroPresentation, *heroState));
+        heroSnapshots.push_back(buildHeroSnapshot(heroPresentation, *heroState));
     }
 
-    return snapshot;
+    return heroSnapshots;
 }
 
 BattleStatusSnapshot BattleController::createStatusSnapshot() const

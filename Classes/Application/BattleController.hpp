@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "Application/BattlePresentationData.hpp"
 #include "Application/BattleSnapshot.hpp"
@@ -28,16 +29,40 @@ public:
     /// 参数 presentation：与战斗推进无关的展示信息，英雄顺序需与战斗系统一致。
     BattleController(std::unique_ptr<CombatSystem> combatSystem, BattleScenePresentation presentation);
 
+    /// 一次战斗输入或推进之后需要刷新的界面范围。
+    struct RefreshRequest
+    {
+        /// 金币或 Boss 剩余血量发生了变化。
+        bool status = false;
+
+        /// 英雄属性发生了变化，例如技能永久提升了攻击力。
+        bool heroes = false;
+
+        /// 是否有任何变化。
+        bool hasAny() const { return status || heroes; }
+    };
+
     /// 推进战斗。
     /// 参数 deltaSeconds：距上次推进的秒数。
-    /// 返回值：展示数值发生变化返回 true，调用方据此决定是否刷新界面。
-    bool advance(double deltaSeconds);
+    /// 返回值：需要刷新的界面范围；没有任何变化时各项均为 false。
+    RefreshRequest advance(double deltaSeconds);
+
+    /// 处理玩家点击 Boss。
+    ///
+    /// 点击本身不造成伤害，伤害与附带效果来自已解锁的点击类技能；没有解锁任何点击技能时
+    /// 点击不会产生任何变化。
+    ///
+    /// 返回值：需要刷新的界面范围。
+    RefreshRequest onBossTapped();
 
     /// 产出完整快照，用于首次建立界面或整屏重建。
     BattleSnapshot createSnapshot() const;
 
     /// 产出数值快照，用于每帧刷新金币与血量。
     BattleStatusSnapshot createStatusSnapshot() const;
+
+    /// 产出英雄快照列表，用于英雄属性变化后刷新英雄栏。
+    std::vector<BattleHeroSnapshot> createHeroSnapshots() const;
 
     /// Boss 是否已被击败。
     bool isBossDefeated() const;

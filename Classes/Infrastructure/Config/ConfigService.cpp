@@ -24,6 +24,13 @@ const int kSupportedSchemaVersion = 1;
 /// 技能可解锁的最小英雄等级。
 const int kMinimumUnlockLevel = 1;
 
+/// 支持的技能触发时机标识。
+const char* const kTapAttackTrigger = "tapAttack";
+
+/// 支持的技能效果类型标识。
+const char* const kDamageEffectType = "damage";
+const char* const kPermanentAttackGrowthEffectType = "permanentAttackGrowth";
+
 /// 读取并解析配置文件。
 /// 参数 path：相对 Resources 根目录的路径。
 /// 参数 document：解析结果输出。
@@ -105,6 +112,37 @@ bool readRequiredPositiveNumber(const rapidjson::Value& owner, const char* key, 
     return true;
 }
 
+/// 读取必填概率字段。
+///
+/// 参数 owner：所属对象。
+/// 参数 key：字段名。
+/// 参数 value：字段原始字符串输出。
+/// 返回值：字段是合法的十进制字符串且取值在 0 到 1 之间（含 1、不含 0）时返回 true。
+bool readRequiredProbability(const rapidjson::Value& owner, const char* key, std::string& value)
+{
+    std::string text;
+    if (!readRequiredPositiveNumber(owner, key, text))
+    {
+        return false;
+    }
+
+    Decimal probability;
+    Decimal upperBound;
+    if (!Decimal::tryParse(text, probability) || !Decimal::tryParse("1", upperBound))
+    {
+        return false;
+    }
+
+    if (probability.compare(upperBound) > 0)
+    {
+        cocos2d::log("[ConfigService] probability must not exceed 1: %s = %s", key, text.c_str());
+        return false;
+    }
+
+    value = text;
+    return true;
+}
+
 /// 读取 images 子对象中的必填文件名字段。
 /// 返回值：images 存在且对应字段为非空字符串时返回 true。
 bool readImageFileName(const rapidjson::Value& owner, const char* key, std::string& value)
@@ -135,8 +173,37 @@ bool parseBoss(const rapidjson::Value& entry, BossConfig& boss)
            && readImageFileName(entry, "idle", boss.idleImageFile);
 }
 
+/// 解析技能的 effect 子对象。
+///
+/// 只读取该效果类型需要的参数，未知效果类型直接判为配置错误，避免加载出一个没有行为的技能。
+///
+/// 参数 effect：effect 子对象。
+/// 参数 skill：解析结果输出。
+/// 返回值：效果类型已知且所需参数齐全合法时返回 true。
+bool parseHeroSkillEffect(const rapidjson::Value& effect, HeroSkillConfig& skill)
+{
+    if (!readRequiredString(effect, "type", skill.effectType))
+    {
+        return false;
+    }
+
+    if (skill.effectType == kDamageEffectType)
+    {
+        return readRequiredPositiveNumber(effect, "attackMultiplier", skill.attackMultiplier);
+    }
+
+    if (skill.effectType == kPermanentAttackGrowthEffectType)
+    {
+        return readRequiredProbability(effect, "chance", skill.chance)
+               && readRequiredPositiveNumber(effect, "levelProductDivisor", skill.levelProductDivisor);
+    }
+
+    cocos2d::log("[ConfigService] unsupported skill effect type: %s", skill.effectType.c_str());
+    return false;
+}
+
 /// 解析单个技能配置条目。
-/// 返回值：字段齐全且解锁等级合法时返回 true。
+/// 返回值：字段齐全且解锁等级、触发时机与效果参数合法时返回 true。
 bool parseHeroSkill(const rapidjson::Value& entry, HeroSkillConfig& skill)
 {
     if (!entry.IsObject())
@@ -159,7 +226,25 @@ bool parseHeroSkill(const rapidjson::Value& entry, HeroSkillConfig& skill)
     }
 
     skill.unlockLevel = entry["unlockLevel"].GetInt();
-    return true;
+
+    if (!readRequiredString(entry, "trigger", skill.trigger))
+    {
+        return false;
+    }
+
+    if (skill.trigger != kTapAttackTrigger)
+    {
+        cocos2d::log("[ConfigService] unsupported skill trigger: %s", skill.trigger.c_str());
+        return false;
+    }
+
+    if (!entry.HasMember("effect") || !entry["effect"].IsObject())
+    {
+        cocos2d::log("[ConfigService] missing effect object for skill: %s", skill.id.c_str());
+        return false;
+    }
+
+    return parseHeroSkillEffect(entry["effect"], skill);
 }
 
 /// 解析单个英雄配置条目，包含技能列表。

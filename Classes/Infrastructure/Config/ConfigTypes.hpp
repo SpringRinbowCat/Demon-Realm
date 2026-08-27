@@ -32,6 +32,9 @@ struct BossConfig
 };
 
 /// 英雄技能配置数据。
+///
+/// 触发时机与效果类型以配置里的原始标识保留，映射成领域枚举由业务层完成；
+/// 效果参数按 `effectType` 取用对应字段，其余字段为空。
 struct HeroSkillConfig
 {
     /// 技能 id。
@@ -42,6 +45,21 @@ struct HeroSkillConfig
 
     /// 解锁所需的英雄等级。
     int unlockLevel = 0;
+
+    /// 触发时机标识，当前只支持 `tapAttack`。
+    std::string trigger;
+
+    /// 效果类型标识，当前支持 `damage` 与 `permanentAttackGrowth`。
+    std::string effectType;
+
+    /// 伤害倍率，十进制字符串；`effectType` 为 `damage` 时有效。
+    std::string attackMultiplier;
+
+    /// 触发概率，十进制字符串，取值范围 0 到 1；`effectType` 为 `permanentAttackGrowth` 时有效。
+    std::string chance;
+
+    /// 等级乘积的除数，十进制字符串；`effectType` 为 `permanentAttackGrowth` 时有效。
+    std::string levelProductDivisor;
 };
 
 /// 英雄配置数据。

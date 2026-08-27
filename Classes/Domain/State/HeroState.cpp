@@ -15,11 +15,16 @@ const double kMaxAttacksPerAdvanceAsDouble = static_cast<double>(HeroState::kMax
 
 HeroState::HeroState(std::string heroId,
                      int level,
+                     int attackLevel,
                      const Decimal& baseAttack,
-                     const Decimal& baseAttackIntervalSeconds)
+                     const Decimal& baseAttackIntervalSeconds,
+                     std::vector<SkillDefinition> skills)
     : _heroId(std::move(heroId))
     , _level(level)
+    , _attackLevel(attackLevel)
+    , _skills(std::move(skills))
     , _baseAttack(baseAttack)
+    , _permanentAttackBonus(Decimal::zero())
     , _baseAttackIntervalSeconds(baseAttackIntervalSeconds)
     , _modifiers()
     , _attack(baseAttack)
@@ -27,16 +32,17 @@ HeroState::HeroState(std::string heroId,
     , _attackIntervalSecondsAsDouble(baseAttackIntervalSeconds.toDouble())
     , _cachedLocalRevision(_modifiers.getRevision())
     , _cachedGlobalRevision(0)
+    , _derivedAttributesDirty(false)
     , _elapsedSeconds(0.0)
 {
-    // 初始状态没有任何修正，派生属性等于基础属性，缓存版本号与之对应。
+    // 初始状态没有任何修正与永久成长，派生属性等于基础属性，缓存版本号与之对应。
 }
 
 void HeroState::refreshDerivedAttributes(const GlobalHeroModifiers& globalModifiers)
 {
     const bool localUnchanged = _modifiers.getRevision() == _cachedLocalRevision;
     const bool globalUnchanged = globalModifiers.revision == _cachedGlobalRevision;
-    if (localUnchanged && globalUnchanged)
+    if (!_derivedAttributesDirty && localUnchanged && globalUnchanged)
     {
         return;
     }
@@ -83,6 +89,51 @@ int HeroState::getLevel() const
     return _level;
 }
 
+int HeroState::getAttackLevel() const
+{
+    return _attackLevel;
+}
+
+const std::vector<SkillDefinition>& HeroState::getSkills() const
+{
+    return _skills;
+}
+
+bool HeroState::isSkillUnlocked(const SkillDefinition& skill) const
+{
+    return skill.unlockLevel <= _level;
+}
+
+bool HeroState::isSkillUnlockedById(const std::string& skillId) const
+{
+    for (const SkillDefinition& skill : _skills)
+    {
+        if (skill.id == skillId)
+        {
+            return isSkillUnlocked(skill);
+        }
+    }
+
+    return false;
+}
+
+void HeroState::addPermanentAttackBonus(const Decimal& amount)
+{
+    if (amount.isZero())
+    {
+        return;
+    }
+
+    _permanentAttackBonus = _permanentAttackBonus.add(amount);
+    // 永久成长不走修正集合，版本号不会变化，因此显式标记派生属性需要重算。
+    _derivedAttributesDirty = true;
+}
+
+const Decimal& HeroState::getPermanentAttackBonus() const
+{
+    return _permanentAttackBonus;
+}
+
 const Decimal& HeroState::getAttack() const
 {
     return _attack;
@@ -105,9 +156,10 @@ const ModifierCollection& HeroState::getModifiers() const
 
 void HeroState::_recalculateDerivedAttributes(const GlobalHeroModifiers& globalModifiers)
 {
+    // 永久成长先并入基础攻击力，再套用修正，因此攻击力加成对成长后的数值同样生效。
     const ModifierAggregate attackAggregate =
         _modifiers.getAggregate(ModifierTarget::HeroAttack).combinedWith(globalModifiers.attack);
-    _attack = attackAggregate.applyTo(_baseAttack);
+    _attack = attackAggregate.applyTo(_baseAttack.add(_permanentAttackBonus));
 
     const ModifierAggregate intervalAggregate =
         _modifiers.getAggregate(ModifierTarget::AttackIntervalSeconds)
@@ -117,6 +169,7 @@ void HeroState::_recalculateDerivedAttributes(const GlobalHeroModifiers& globalM
 
     _cachedLocalRevision = _modifiers.getRevision();
     _cachedGlobalRevision = globalModifiers.revision;
+    _derivedAttributesDirty = false;
 }
 
 }  // namespace DemonRealm

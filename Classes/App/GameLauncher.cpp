@@ -9,8 +9,11 @@
 #include "Application/BattlePresentationData.hpp"
 #include "Domain/Combat/CombatSystem.hpp"
 #include "Domain/Numeric/Decimal.hpp"
+#include "Domain/Random/RandomSource.hpp"
+#include "Domain/Skill/SkillDefinition.hpp"
 #include "Domain/State/HeroState.hpp"
 #include "Infrastructure/Config/ConfigService.hpp"
+#include "Infrastructure/Random/TimeSeededRandomSource.hpp"
 #include "Presentation/MainSceneView.hpp"
 
 namespace DemonRealm
@@ -20,6 +23,16 @@ namespace
 
 /// 英雄初始等级；通关重置后回到该等级。
 const int kInitialHeroLevel = 1;
+
+/// 攻击力初始等级；与英雄等级是两个独立概念，升级系统尚未实现。
+const int kInitialAttackLevel = 1;
+
+/// 配置里支持的技能触发时机标识。
+const char* const kTapAttackTrigger = "tapAttack";
+
+/// 配置里支持的技能效果类型标识。
+const char* const kDamageEffectType = "damage";
+const char* const kPermanentAttackGrowthEffectType = "permanentAttackGrowth";
 
 /// 设计分辨率宽度，与像素资源的 540x960 竖屏基准一致。
 const float kDesignResolutionWidth = 540.0F;
@@ -58,19 +71,75 @@ BattleHeroPresentation buildHeroPresentation(const HeroConfig& hero)
     for (const HeroSkillConfig& skill : hero.skills)
     {
         HeroSkillPresentation skillPresentation;
+        skillPresentation.skillId = skill.id;
         skillPresentation.displayName = skill.displayName;
-        skillPresentation.unlockLevel = skill.unlockLevel;
         presentation.skills.push_back(skillPresentation);
     }
 
     return presentation;
 }
 
+/// 把技能配置映射成领域技能定义。
+///
+/// 触发时机与效果类型在配置里是字符串，这里翻译成枚举；未知取值属于装配错误，直接失败，
+/// 避免运行出一个不会产生任何效果的技能。
+///
+/// 参数 config：技能配置。
+/// 参数 definition：映射结果输出。
+/// 返回值：触发时机、效果类型与效果参数都合法时返回 true。
+bool buildSkillDefinition(const HeroSkillConfig& config, SkillDefinition& definition)
+{
+    definition.id = config.id;
+    definition.unlockLevel = config.unlockLevel;
+
+    if (config.trigger != kTapAttackTrigger)
+    {
+        cocos2d::log("[GameLauncher] unsupported skill trigger: %s", config.trigger.c_str());
+        return false;
+    }
+
+    definition.trigger = SkillTrigger::TapAttack;
+
+    if (config.effectType == kDamageEffectType)
+    {
+        definition.effectType = SkillEffectType::Damage;
+        if (!Decimal::tryParse(config.attackMultiplier, definition.damage.attackMultiplier))
+        {
+            cocos2d::log("[GameLauncher] skill has invalid attackMultiplier: %s", config.id.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    if (config.effectType == kPermanentAttackGrowthEffectType)
+    {
+        definition.effectType = SkillEffectType::PermanentAttackGrowth;
+        if (!Decimal::tryParse(config.chance, definition.attackGrowth.chance)
+            || !Decimal::tryParse(config.levelProductDivisor, definition.attackGrowth.levelProductDivisor))
+        {
+            cocos2d::log("[GameLauncher] skill has invalid growth parameters: %s", config.id.c_str());
+            return false;
+        }
+
+        if (definition.attackGrowth.levelProductDivisor.isZero())
+        {
+            cocos2d::log("[GameLauncher] skill divisor must be greater than zero: %s", config.id.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    cocos2d::log("[GameLauncher] unsupported skill effect type: %s", config.effectType.c_str());
+    return false;
+}
+
 /// 按配置构造单个英雄的运行时状态并追加到列表。
 /// 参数 hero：英雄配置。
 /// 参数 heroLevel：英雄当前等级。
 /// 参数 heroStates：输出列表。
-/// 返回值：数值字段合法时返回 true。
+/// 返回值：数值字段与技能定义合法时返回 true。
 bool appendHeroState(const HeroConfig& hero, int heroLevel, std::vector<HeroState>& heroStates)
 {
     // 攻击力的分段成长属于 Domain 规则，尚未实现；初始等级下最终攻击力等于基础攻击力。
@@ -89,7 +158,25 @@ bool appendHeroState(const HeroConfig& hero, int heroLevel, std::vector<HeroStat
         return false;
     }
 
-    heroStates.emplace_back(hero.id, heroLevel, baseAttack, baseAttackIntervalSeconds);
+    std::vector<SkillDefinition> skills;
+    skills.reserve(hero.skills.size());
+    for (const HeroSkillConfig& skillConfig : hero.skills)
+    {
+        SkillDefinition definition;
+        if (!buildSkillDefinition(skillConfig, definition))
+        {
+            return false;
+        }
+
+        skills.push_back(definition);
+    }
+
+    heroStates.emplace_back(hero.id,
+                            heroLevel,
+                            kInitialAttackLevel,
+                            baseAttack,
+                            baseAttackIntervalSeconds,
+                            std::move(skills));
     return true;
 }
 
@@ -125,7 +212,10 @@ std::unique_ptr<BattleController> createBattleController(const BossConfig& boss,
         presentation.heroes.push_back(buildHeroPresentation(hero));
     }
 
-    std::unique_ptr<CombatSystem> combatSystem(new CombatSystem(bossMaxHp, std::move(heroStates)));
+    // 概率技能按当前时间取随机数，因此没有保底；随机源由战斗系统持有。
+    std::unique_ptr<RandomSource> randomSource(new TimeSeededRandomSource());
+    std::unique_ptr<CombatSystem> combatSystem(
+        new CombatSystem(bossMaxHp, std::move(heroStates), std::move(randomSource)));
     return std::unique_ptr<BattleController>(
         new BattleController(std::move(combatSystem), std::move(presentation)));
 }

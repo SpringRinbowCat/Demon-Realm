@@ -166,6 +166,35 @@ std::string multiplyDigits(const std::string& left, const std::string& right)
     return stripLeadingZeros(result);
 }
 
+/// 数字串相除，取整数商。
+/// 参数 dividend：被除数，无前导零的十进制数字串。
+/// 参数 divisor：除数，无前导零且不为 "0"。
+/// 返回值：向下取整的商，无前导零。
+std::string divideDigits(const std::string& dividend, const std::string& divisor)
+{
+    // 竖式除法：逐位把下一位带进余数，再用减法试出该位的商。
+    std::string quotient;
+    quotient.reserve(dividend.size());
+
+    std::string remainder(kZeroDigits);
+    for (const char digit : dividend)
+    {
+        remainder.push_back(digit);
+        remainder = stripLeadingZeros(remainder);
+
+        int quotientDigit = 0;
+        while (compareDigits(remainder, divisor) >= 0)
+        {
+            remainder = subtractDigits(remainder, divisor);
+            ++quotientDigit;
+        }
+
+        quotient.push_back(static_cast<char>(kZeroDigit + quotientDigit));
+    }
+
+    return stripLeadingZeros(quotient);
+}
+
 /// 去掉数字串末尾若干位，等价于向下取整的按位除法。
 /// 参数 digits：无前导零的十进制数字串。
 /// 参数 count：要去掉的低位个数。
@@ -281,6 +310,23 @@ Decimal Decimal::multiply(const Decimal& other) const
     Decimal result;
     result._scaledDigits = removeLowestDigits(product, static_cast<std::size_t>(kFractionDigits));
     return result;
+}
+
+bool Decimal::tryDivide(const Decimal& divisor, Decimal& quotient) const
+{
+    if (divisor.isZero())
+    {
+        return false;
+    }
+
+    // 两个 10^4 放大值相除会把放大倍数抵消掉，先把被除数再放大 10^4 才能得到 4 位小数的商。
+    const std::string scaledDividend =
+        _scaledDigits == kZeroDigits
+            ? std::string(kZeroDigits)
+            : _scaledDigits + std::string(static_cast<std::size_t>(kFractionDigits), kZeroDigit);
+
+    quotient._scaledDigits = divideDigits(scaledDividend, divisor._scaledDigits);
+    return true;
 }
 
 int Decimal::compare(const Decimal& other) const

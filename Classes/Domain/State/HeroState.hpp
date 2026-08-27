@@ -1,10 +1,12 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "Domain/Modifier/ModifierAggregate.hpp"
 #include "Domain/Modifier/ModifierCollection.hpp"
 #include "Domain/Numeric/Decimal.hpp"
+#include "Domain/Skill/SkillDefinition.hpp"
 
 namespace DemonRealm
 {
@@ -44,13 +46,18 @@ public:
 
     /// 构造英雄状态。
     /// 参数 heroId：英雄配置 id。
-    /// 参数 level：当前等级。
+    /// 参数 level：当前英雄等级。
+    /// 参数 attackLevel：当前攻击力等级；与英雄等级是两个独立概念，升级系统尚未实现，
+    ///     目前由组合根按初始值传入。
     /// 参数 baseAttack：基础攻击力。
     /// 参数 baseAttackIntervalSeconds：基础攻击间隔，单位秒；必须大于 0，否则该英雄不会攻击。
+    /// 参数 skills：该英雄的全部技能定义，按配置顺序；解锁判定由本类按等级完成。
     HeroState(std::string heroId,
               int level,
+              int attackLevel,
               const Decimal& baseAttack,
-              const Decimal& baseAttackIntervalSeconds);
+              const Decimal& baseAttackIntervalSeconds,
+              std::vector<SkillDefinition> skills);
 
     /// 按最新的全局修正刷新派生属性；版本未变化时不做任何计算。
     /// 参数 globalModifiers：全局修正快照。
@@ -64,8 +71,35 @@ public:
     /// 取英雄配置 id。
     const std::string& getHeroId() const;
 
-    /// 取当前等级。
+    /// 取当前英雄等级。
     int getLevel() const;
+
+    /// 取当前攻击力等级。
+    int getAttackLevel() const;
+
+    /// 取全部技能定义，按配置顺序。
+    const std::vector<SkillDefinition>& getSkills() const;
+
+    /// 判断技能是否已解锁。
+    /// 参数 skill：技能定义。
+    /// 返回值：解锁所需等级不高于当前英雄等级时返回 true。
+    bool isSkillUnlocked(const SkillDefinition& skill) const;
+
+    /// 按技能 id 判断技能是否已解锁。
+    /// 参数 skillId：技能 id。
+    /// 返回值：技能存在且已解锁时返回 true。
+    bool isSkillUnlockedById(const std::string& skillId) const;
+
+    /// 永久提升攻击力。
+    ///
+    /// 与修正（buff）不同，这里的提升不可移除，会一直计入基础攻击力之后的最终攻击力。
+    /// 供成长类技能使用。
+    ///
+    /// 参数 amount：提升量；为 0 时不做任何改动。
+    void addPermanentAttackBonus(const Decimal& amount);
+
+    /// 取累计的永久攻击力提升量。
+    const Decimal& getPermanentAttackBonus() const;
 
     /// 取最终攻击力，即单次攻击造成的伤害。
     /// 返回值：已计入自身与全局修正的攻击力。
@@ -88,11 +122,20 @@ private:
     /// 英雄配置 id。
     std::string _heroId;
 
-    /// 当前等级。
+    /// 当前英雄等级。
     int _level;
+
+    /// 当前攻击力等级。
+    int _attackLevel;
+
+    /// 全部技能定义，按配置顺序。
+    std::vector<SkillDefinition> _skills;
 
     /// 基础攻击力，不含任何修正。
     Decimal _baseAttack;
+
+    /// 累计的永久攻击力提升量，参与最终攻击力计算且不可移除。
+    Decimal _permanentAttackBonus;
 
     /// 基础攻击间隔，单位秒，不含任何修正。
     Decimal _baseAttackIntervalSeconds;
@@ -114,6 +157,9 @@ private:
 
     /// 生成当前缓存时的全局修正版本号。
     unsigned long long _cachedGlobalRevision;
+
+    /// 派生属性缓存是否已失效；永久成长等不经过修正集合的改动会置上该标记。
+    bool _derivedAttributesDirty;
 
     /// 距上次攻击已累计的秒数。
     double _elapsedSeconds;

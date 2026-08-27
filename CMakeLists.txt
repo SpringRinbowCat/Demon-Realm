@@ -64,11 +64,14 @@ set(GAME_HEADER
     Classes/Domain/Modifier/ModifierCollection.hpp
     Classes/Domain/Modifier/ModifierTypes.hpp
     Classes/Domain/Numeric/Decimal.hpp
+    Classes/Domain/Random/RandomSource.hpp
+    Classes/Domain/Skill/SkillDefinition.hpp
     Classes/Domain/State/BossState.hpp
     Classes/Domain/State/EconomyState.hpp
     Classes/Domain/State/HeroState.hpp
     Classes/Infrastructure/Config/ConfigTypes.hpp
     Classes/Infrastructure/Config/ConfigService.hpp
+    Classes/Infrastructure/Random/TimeSeededRandomSource.hpp
     Classes/Presentation/Format/NumberFormatter.hpp
     Classes/Presentation/BattleView.hpp
     Classes/Presentation/MainSceneView.hpp
@@ -86,6 +89,7 @@ set(GAME_SOURCE
     Classes/Domain/State/EconomyState.cpp
     Classes/Domain/State/HeroState.cpp
     Classes/Infrastructure/Config/ConfigService.cpp
+    Classes/Infrastructure/Random/TimeSeededRandomSource.cpp
     Classes/Presentation/Format/NumberFormatter.cpp
     Classes/Presentation/BattleView.cpp
     Classes/Presentation/MainSceneView.cpp

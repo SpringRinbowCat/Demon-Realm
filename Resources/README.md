@@ -131,7 +131,26 @@
 
 `baseAttack` 与 `baseAttackIntervalSeconds` 是战斗系统实际读取的字段：前者是单次攻击造成的伤害，后者是自动攻击的间隔秒数，两者都必须大于 0。当前配置为 `"1"` 与 `"4.0"`，即每 4 秒造成 1 点伤害并获得 1 金币。
 
-英雄的 `images` 包含两个字段：`icon` 是 UI 图标（2 倍密度），`card` 是战斗页卡片立绘（10 倍密度）。`skills` 每项包含 `id`、`unlockLevel`、`displayName` 和 `description`；战斗页只展示 `unlockLevel` 不大于当前等级的技能名称。
+英雄的 `images` 包含两个字段：`icon` 是 UI 图标（2 倍密度），`card` 是战斗页卡片立绘（10 倍密度）。
+
+### 技能配置
+
+`skills` 每项包含 `id`、`unlockLevel`、`displayName`、`description`、`trigger` 和 `effect`。战斗页只展示 `unlockLevel` 不大于当前英雄等级的技能名称，也只有已解锁的技能会真的生效。
+
+`trigger` 是触发时机，当前只支持：
+
+- `tapAttack`：玩家点击 Boss 时触发。命中区域是 Boss 贴图自身的矩形范围。
+
+`effect` 是效果描述，`type` 决定需要哪些参数，参数一律写成字符串：
+
+- `damage`：造成伤害。需要 `attackMultiplier`（伤害倍率，作用在英雄最终攻击力上；`"1.0"` 等同于一次普通攻击）。
+- `permanentAttackGrowth`：按概率永久提升攻击力。需要 `chance`（触发概率，取值 0 到 1）和 `levelProductDivisor`（除数，必须大于 0）。提升量固定按 `攻击力等级 × 英雄等级 ÷ levelProductDivisor` 计算。
+
+未知的 `trigger` 或 `effect.type` 会让配置加载失败，避免上线一个不产生任何效果的技能。`chance` 超过 1 也会被拒绝。
+
+概率没有保底：每次点击都按当前时间独立取随机数，不记录“连续多少次没触发”。所以 `"0.2"` 就是每次点击各自 20% 的概率，不保证若干次内必定触发。
+
+当前沛总的两个技能：`keyboard_face_roll` 解锁等级 1，倍率 `"1.0"`；`growth` 解锁等级 20，概率 `"0.2"`、除数 `"50"`。攻击力等级由升级系统推进，升级尚未实现，目前恒为 1。
 
 `Classes/Infrastructure/Config/ConfigService` 会校验 `schemaVersion`、必填字符串、数值字符串的格式与正负、`images` 子字段和 `skills` 数组；任一项不合法都会记录日志并整体加载失败，不会保留半份配置。数值字段的原始字符串会原样传给业务层，解析服务自身不做单位换算或数值转换。
 

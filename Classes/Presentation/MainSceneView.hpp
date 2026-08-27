@@ -53,6 +53,13 @@ private:
     /// 参数 item：被点击的入口项。
     void _onBottomBarItemSelected(BattleBottomBarItem item);
 
+    /// Boss 点击响应；转交战斗用例结算点击类技能。
+    void _onBossTapped();
+
+    /// 按刷新范围更新战斗页面。
+    /// 参数 request：需要刷新的界面范围。
+    void _applyRefreshRequest(const BattleController::RefreshRequest& request);
+
     /// 战斗用例；由组合根持有，这里只保存非拥有指针。
     BattleController* _battleController = nullptr;
 
