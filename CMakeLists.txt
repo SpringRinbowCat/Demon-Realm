@@ -55,12 +55,39 @@ endif()
 # 跨平台业务代码
 set(GAME_HEADER
     Classes/App/GameLauncher.hpp
+    Classes/Application/BattleController.hpp
+    Classes/Application/BattlePresentationData.hpp
+    Classes/Application/BattleSnapshot.hpp
+    Classes/Domain/Combat/CombatSystem.hpp
+    Classes/Domain/Combat/CombatTickReport.hpp
+    Classes/Domain/Modifier/ModifierAggregate.hpp
+    Classes/Domain/Modifier/ModifierCollection.hpp
+    Classes/Domain/Modifier/ModifierTypes.hpp
+    Classes/Domain/Numeric/Decimal.hpp
+    Classes/Domain/State/BossState.hpp
+    Classes/Domain/State/EconomyState.hpp
+    Classes/Domain/State/HeroState.hpp
+    Classes/Infrastructure/Config/ConfigTypes.hpp
+    Classes/Infrastructure/Config/ConfigService.hpp
+    Classes/Presentation/Format/NumberFormatter.hpp
+    Classes/Presentation/BattleView.hpp
     Classes/Presentation/MainSceneView.hpp
     Classes/Presentation/EnterGameView.hpp
     )
 
 set(GAME_SOURCE
     Classes/App/GameLauncher.cpp
+    Classes/Application/BattleController.cpp
+    Classes/Domain/Combat/CombatSystem.cpp
+    Classes/Domain/Modifier/ModifierAggregate.cpp
+    Classes/Domain/Modifier/ModifierCollection.cpp
+    Classes/Domain/Numeric/Decimal.cpp
+    Classes/Domain/State/BossState.cpp
+    Classes/Domain/State/EconomyState.cpp
+    Classes/Domain/State/HeroState.cpp
+    Classes/Infrastructure/Config/ConfigService.cpp
+    Classes/Presentation/Format/NumberFormatter.cpp
+    Classes/Presentation/BattleView.cpp
     Classes/Presentation/MainSceneView.cpp
     Classes/Presentation/EnterGameView.cpp
     )
@@ -108,6 +135,8 @@ target_link_libraries(${APP_NAME} cocos2d)
 target_include_directories(${APP_NAME}
     PRIVATE Classes
     PRIVATE ${COCOS2DX_ROOT_PATH}/cocos/audio/include/
+    # 引擎自带的 rapidjson，供 Infrastructure 层解析运行时配置使用。
+    PRIVATE ${COCOS2DX_ROOT_PATH}/external
 )
 
 setup_cocos_app_config(${APP_NAME})

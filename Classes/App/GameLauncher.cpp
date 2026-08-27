@@ -2,12 +2,24 @@
 
 #include "cocos2d.h"
 
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "Application/BattlePresentationData.hpp"
+#include "Domain/Combat/CombatSystem.hpp"
+#include "Domain/Numeric/Decimal.hpp"
+#include "Domain/State/HeroState.hpp"
+#include "Infrastructure/Config/ConfigService.hpp"
 #include "Presentation/MainSceneView.hpp"
 
 namespace DemonRealm
 {
 namespace
 {
+
+/// 英雄初始等级；通关重置后回到该等级。
+const int kInitialHeroLevel = 1;
 
 /// 设计分辨率宽度，与像素资源的 540x960 竖屏基准一致。
 const float kDesignResolutionWidth = 540.0F;
@@ -32,6 +44,114 @@ const int kStencilBufferBits = 8;
 
 /// 多重采样数量；像素风格贴图不使用多重采样，避免边缘被抗锯齿。
 const int kMultisamplingCount = 0;
+
+/// 按配置构造单个英雄的展示信息。
+/// 参数 hero：英雄配置。
+/// 返回值：填充完成的英雄展示信息。
+BattleHeroPresentation buildHeroPresentation(const HeroConfig& hero)
+{
+    BattleHeroPresentation presentation;
+    presentation.heroId = hero.id;
+    presentation.displayName = hero.displayName;
+    presentation.cardImageFile = hero.cardImageFile;
+
+    for (const HeroSkillConfig& skill : hero.skills)
+    {
+        HeroSkillPresentation skillPresentation;
+        skillPresentation.displayName = skill.displayName;
+        skillPresentation.unlockLevel = skill.unlockLevel;
+        presentation.skills.push_back(skillPresentation);
+    }
+
+    return presentation;
+}
+
+/// 按配置构造单个英雄的运行时状态并追加到列表。
+/// 参数 hero：英雄配置。
+/// 参数 heroLevel：英雄当前等级。
+/// 参数 heroStates：输出列表。
+/// 返回值：数值字段合法时返回 true。
+bool appendHeroState(const HeroConfig& hero, int heroLevel, std::vector<HeroState>& heroStates)
+{
+    // 攻击力的分段成长属于 Domain 规则，尚未实现；初始等级下最终攻击力等于基础攻击力。
+    Decimal baseAttack;
+    Decimal baseAttackIntervalSeconds;
+    if (!Decimal::tryParse(hero.baseAttack, baseAttack)
+        || !Decimal::tryParse(hero.baseAttackIntervalSeconds, baseAttackIntervalSeconds))
+    {
+        cocos2d::log("[GameLauncher] hero has invalid numeric config: %s", hero.id.c_str());
+        return false;
+    }
+
+    if (baseAttackIntervalSeconds.isZero())
+    {
+        cocos2d::log("[GameLauncher] hero attack interval must be greater than zero: %s", hero.id.c_str());
+        return false;
+    }
+
+    heroStates.emplace_back(hero.id, heroLevel, baseAttack, baseAttackIntervalSeconds);
+    return true;
+}
+
+/// 按配置装配战斗用例。
+/// 参数 boss：当前 Boss 配置。
+/// 参数 heroConfigs：参与战斗的英雄配置列表，顺序即结算与展示顺序。
+/// 参数 heroLevel：英雄当前等级。
+/// 返回值：装配成功返回战斗用例；配置数值非法时返回 nullptr。
+std::unique_ptr<BattleController> createBattleController(const BossConfig& boss,
+                                                        const std::vector<HeroConfig>& heroConfigs,
+                                                        int heroLevel)
+{
+    Decimal bossMaxHp;
+    if (!Decimal::tryParse(boss.maxHp, bossMaxHp))
+    {
+        cocos2d::log("[GameLauncher] boss has invalid maxHp: %s", boss.id.c_str());
+        return nullptr;
+    }
+
+    BattleScenePresentation presentation;
+    presentation.backgroundImageFile = boss.backgroundImageFile;
+    presentation.bossImageFile = boss.idleImageFile;
+
+    std::vector<HeroState> heroStates;
+    heroStates.reserve(heroConfigs.size());
+    for (const HeroConfig& hero : heroConfigs)
+    {
+        if (!appendHeroState(hero, heroLevel, heroStates))
+        {
+            return nullptr;
+        }
+
+        presentation.heroes.push_back(buildHeroPresentation(hero));
+    }
+
+    std::unique_ptr<CombatSystem> combatSystem(new CombatSystem(bossMaxHp, std::move(heroStates)));
+    return std::unique_ptr<BattleController>(
+        new BattleController(std::move(combatSystem), std::move(presentation)));
+}
+
+/// 加载运行时配置并装配战斗用例。
+/// 返回值：装配成功返回战斗用例；配置缺失或非法时返回 nullptr。
+std::unique_ptr<BattleController> loadBattleController()
+{
+    ConfigService configService;
+    if (!configService.load())
+    {
+        cocos2d::log("[GameLauncher] failed to load runtime config");
+        return nullptr;
+    }
+
+    const std::vector<BossConfig>& bosses = configService.getBosses();
+    const std::vector<HeroConfig>& heroes = configService.getHeroes();
+    if (bosses.empty() || heroes.empty())
+    {
+        cocos2d::log("[GameLauncher] runtime config has no boss or hero entry");
+        return nullptr;
+    }
+
+    // 当前只有首个 Boss 参与战斗；全部已配置英雄都视为已召唤，队伍与关卡选择由后续系统决定。
+    return createBattleController(bosses.front(), heroes, kInitialHeroLevel);
+}
 
 }  // namespace
 
@@ -81,7 +201,14 @@ bool GameLauncher::applicationDidFinishLaunching()
                                     ::ResolutionPolicy::SHOW_ALL);
     director->setAnimationInterval(1.0 / kTargetFramesPerSecond);
 
-    MainSceneView* scene = MainSceneView::create();
+    _battleController = loadBattleController();
+    if (_battleController == nullptr)
+    {
+        return false;
+    }
+
+    // 场景只拿到非拥有指针：业务状态由组合根持有，页面切换或场景重建都不会丢失战斗进度。
+    MainSceneView* scene = MainSceneView::create(_battleController.get());
     if (scene == nullptr)
     {
         cocos2d::log("[GameLauncher] failed to create main scene");

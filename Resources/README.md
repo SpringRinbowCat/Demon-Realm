@@ -24,10 +24,17 @@
 ├── Textures/
 │   ├── Pixel/                      # 像素格 PNG 贴图
 │   │   ├── Bosses/
+│   │   │   └── Boss_1.png
 │   │   ├── Heroes/
-│   │   ├── UI/                     # 按钮等界面贴图
+│   │   │   ├── hero_1.png          # UI 图标，2 倍密度
+│   │   │   └── hero_1_卡片.png     # 战斗页卡片立绘，10 倍密度
+│   │   ├── UI/                     # 按钮、图标和面板贴图
 │   │   │   ├── 按钮_进入游戏_常态.png
-│   │   │   └── 按钮_进入游戏_按下.png
+│   │   │   ├── 按钮_进入游戏_按下.png
+│   │   │   ├── 按钮_底部栏_常态.png
+│   │   │   ├── 按钮_底部栏_按下.png
+│   │   │   ├── 图标_金币.png
+│   │   │   └── 面板_英雄卡片.png
 │   │   ├── Effects/
 │   │   ├── Backgrounds/
 │   │   └── Common/
@@ -49,7 +56,9 @@
 - 背景：`背景_<界面名>.png`，例如 `背景_进入游戏界面.png`、`背景_战斗界面.png`。
 - Boss：`Boss_<编号>.png`，例如 `Boss_1.png`。
 - 英雄：`hero_<编号>.png`，例如 `hero_1.png`。
-- 界面按钮：`按钮_<用途>_<状态>.png`，例如 `按钮_进入游戏_常态.png`、`按钮_进入游戏_按下.png`。
+- 界面按钮：`按钮_<用途>_<状态>.png`，例如 `按钮_进入游戏_常态.png`、`按钮_底部栏_按下.png`。
+- 界面图标：`图标_<用途>.png`，例如 `图标_金币.png`。
+- 界面面板：`面板_<用途>.png`，例如 `面板_英雄卡片.png`。
 
 约定：
 
@@ -57,6 +66,7 @@
 - 中文文件名保持 UTF-8 NFC 形式；引用这些文件的 C++ 源文件必须以 UTF-8 保存，Windows 构建已在 `CMakeLists.txt` 中通过 `/utf-8` 指定窄字符串字面量编码。
 - 配置文件的图片字段只写文件名，不写目录；目录由资源分类决定。
 - 同一资源出现多个状态或帧时，在用途后追加状态段，例如 `_常态`、`_按下`。
+- 同一角色在不同显示层需要不同像素密度时，用途段区分用法，例如 UI 图标 `hero_1.png` 与战斗页卡片立绘 `hero_1_卡片.png`。
 
 ## 运行时资源与 ArtSource 边界
 
@@ -70,10 +80,14 @@
 
 - [战斗火焰背景](Textures/Pixel/Backgrounds/背景_战斗界面.png)：540×960，无 Alpha；用于 Boss 战斗场景。
 - [进入游戏页背景](Textures/Pixel/Backgrounds/背景_进入游戏界面.png)：540×960，无 Alpha；魔域门扉构图，仅用于进入游戏页面。
-- [阿熊待机图](Textures/Pixel/Bosses/Boss_1.png)：540×420，RGBA；使用完整 Bear 64×33 帧按 10 倍最近邻放大。
+- [阿熊待机图](Textures/Pixel/Bosses/Boss_1.png)：424×240，RGBA；Bear 64×33 帧按不透明区域裁切为 53×30 后按 8 倍最近邻放大。
 - [沛总 UI 图标](Textures/Pixel/Heroes/hero_1.png)：32×32，RGBA；使用 16×16 源图按 2 倍最近邻放大。
 - [进入游戏按钮常态](Textures/Pixel/UI/按钮_进入游戏_常态.png)：300×90，RGBA；源图 30×9 像素格按 10 倍最近邻放大。
 - [进入游戏按钮按下态](Textures/Pixel/UI/按钮_进入游戏_按下.png)：300×90，RGBA；与常态同规格，明暗关系相反。
+- [底部栏按钮常态](Textures/Pixel/UI/按钮_底部栏_常态.png) 与 [按下态](Textures/Pixel/UI/按钮_底部栏_按下.png)：100×100，RGBA；源图 10×10 像素格按 10 倍放大。五个按钮加四个 10px 间隔正好铺满 540 宽。
+- [金币图标](Textures/Pixel/UI/图标_金币.png)：60×60，RGBA；源图 6×6 像素格按 10 倍放大。
+- [英雄卡片面板](Textures/Pixel/UI/面板_英雄卡片.png)：520×110，RGBA；源图 52×11 像素格按 10 倍放大。卡片高度按英雄栏一屏显示三张设计。
+- [沛总战斗卡片立绘](Textures/Pixel/Heroes/hero_1_卡片.png)：80×80，RGBA；16×16 源图按 5 倍最近邻放大，适配压缩后的卡片高度。
 
 进入游戏页面和战斗场景使用各自独立的背景资源，不共用同一张图：页面背景为 `背景_进入游戏界面.png`，战斗背景为 `背景_战斗界面.png`。进入游戏按钮落在页面背景下半的低干扰地面区。
 
@@ -81,16 +95,26 @@
 
 目标加载边界是 `Classes/Infrastructure/Config/ConfigService`：负责加载、解析、版本校验、字段范围校验和错误处理；配置文件只描述数据，不实现战斗、升级或存档流程。
 
+### 数值字段一律写成字符串
+
+游戏数值（血量、攻击力、攻击间隔、掉落数量、概率、升级费用与倍率）在 JSON 里必须写成字符串，例如 `"maxHp": "100000"`、`"baseAttackIntervalSeconds": "4.0"`。
+
+原因：挂机游戏的数值会膨胀到 double 无法精确表示的量级，而 JSON 数字会被解析器先转成 double，精度在读配置这一步就已经丢了。写成字符串后，解析阶段只校验格式，真正的计算交给 `Domain/Numeric/Decimal`（定点小数，固定 4 位小数、一律向下取整）。
+
+例外：等级、区间边界、`schemaVersion` 这类不会膨胀的计数仍写成 JSON 整数（`minLevel`、`maxLevel`、`unlockLevel`）。
+
+小数位超过 4 位的部分会在解析时被向下取整截断，例如 `"2.43281"` 实际按 `2.4328` 生效。
+
 ### Boss 配置
 
-当前 [Config/bosses.json](Config/bosses.json) 为 `schemaVersion` 1，包含一个 id 为 `1`、名称为“阿熊”的 Boss，初始 `maxHp` 为 100000。
+当前 [Config/bosses.json](Config/bosses.json) 为 `schemaVersion` 1，包含一个 id 为 `1`、名称为“阿熊”的 Boss，初始 `maxHp` 为 `"100000"`。
 
 每个 `drops` 条目包含：
 
 - `type`：只能是 `currency` 或 `treasure`。
 - `itemId`：掉落物或宝物 ID。
-- `quantity`：掉落数量。
-- `probability`：0 到 1 之间的掉落概率。
+- `quantity`：掉落数量，十进制字符串。
+- `probability`：0 到 1 之间的掉落概率，十进制字符串。
 
 `currency` 是本轮使用的常规货币，通关结算后清空；`treasure` 对应通关后保留的宝物、解锁状态或永久加成。Boss 的 `images` 当前包含 `background` 和 `idle` 两个文件名字段。
 
@@ -103,19 +127,32 @@
 - 区间不能重叠，且 `minLevel` 不得大于 `maxLevel`。
 - 英雄等级和攻击力等级是两个独立概念。
 
-当前配置为攻击力等级 1–30 倍率 2.0、31–80 倍率 1.5。`upgradeCostMultiplier` 只表示升级费用增长，不表示攻击力成长倍率。
+当前配置为攻击力等级 1–30 倍率 `"2.0"`、31–80 倍率 `"1.5"`。`upgradeCostMultiplier` 只表示升级费用增长，不表示攻击力成长倍率。
+
+`baseAttack` 与 `baseAttackIntervalSeconds` 是战斗系统实际读取的字段：前者是单次攻击造成的伤害，后者是自动攻击的间隔秒数，两者都必须大于 0。当前配置为 `"1"` 与 `"4.0"`，即每 4 秒造成 1 点伤害并获得 1 金币。
+
+英雄的 `images` 包含两个字段：`icon` 是 UI 图标（2 倍密度），`card` 是战斗页卡片立绘（10 倍密度）。`skills` 每项包含 `id`、`unlockLevel`、`displayName` 和 `description`；战斗页只展示 `unlockLevel` 不大于当前等级的技能名称。
+
+`Classes/Infrastructure/Config/ConfigService` 会校验 `schemaVersion`、必填字符串、数值字符串的格式与正负、`images` 子字段和 `skills` 数组；任一项不合法都会记录日志并整体加载失败，不会保留半份配置。数值字段的原始字符串会原样传给业务层，解析服务自身不做单位换算或数值转换。
 
 ## 像素图片资源规范
 
 为避免 Boss、人物和背景的像素密度混用，运行时像素资源按显示层分档：
 
-- **全屏战斗层**：背景、Boss、场景内人物和敌人统一使用 10×10 输出像素格。540×960 背景对应 54×96 个逻辑格；Boss 使用完整 64×33 原始帧按 10 倍最近邻放大，放入 540×420 RGBA 画布。需要叠加到战斗背景上的人物，也必须按同一 10 倍像素密度导出。
-- **UI 小图标**：卡片内人物图标允许使用 16×16 源图按 2 倍最近邻放大到 32×32；它只属于 UI 层，不直接叠加在战斗背景上。同一人物如果进入战斗场景，必须另做符合 10 倍战斗像素密度的版本。
+像素密度按显示层分档，同一层内必须一致：
+
+- **背景层（10 倍）**：540×960 背景对应 54×96 个逻辑格。
+- **场景层（8 倍）**：Boss 和场景内角色使用 8 倍最近邻，并按不透明区域紧裁切，不保留大片透明画布。Boss 必须能完整落在屏幕上半区，例如 Bear 的 64×33 原始帧裁切为 53×30 后按 8 倍放大到 424×240。
+- **UI 面板层（10 倍）**：按钮、图标和面板等界面框体使用 10 倍，与背景保持同一格宽。
+- **面板内头像（5 倍）**：英雄栏卡片里的立绘使用 5 倍，例如 16×16 源图放大到 80×80，让卡片能压缩到列表可容纳的高度。
+- **非战斗界面小图标（2 倍）**：`hero_1.png` 这类 16×16 源图按 2 倍放大到 32×32，只用于战斗页以外的界面。
+
+背景 10 倍与场景 8 倍是有意的分档：Boss 若按 10 倍会超出上半区，而运行时非整数缩放会破坏像素边缘，所以改为在导出阶段降一档密度。
 - **全屏页面按钮**：进入游戏等按钮与全屏背景同屏显示，必须使用 10×10 输出像素格，例如 30×9 像素格源图按 10 倍最近邻放大到 300×90，不与 2 倍的卡片图标混用。按钮文字在接入像素字体前可用系统字体绘制，但贴图本身不得做非整数缩放。
 - **缩放与导出**：只能使用整数倍缩放和最近邻采样；禁止双线性、双三次、抗锯齿和运行时非整数缩放。源图尺寸、裁剪边界和场景摆放位置应对齐对应像素格。
 - **透明与边缘**：Boss、人物和特效使用 RGBA；轮廓外保持透明，不留黑边、白边或原素材背景色的 matte 光晕。背景使用完整画布，不把人物背景色烘焙进背景图。
 - **色阶与邻接像素**：同一背景区域使用有限调色板；相邻像素格只有在火焰轮廓、角色轮廓等有意边界处才允许出现明显色差，不用随机渐变制造细碎跳色。火焰带内部的近黑填充统一使用与上方暗红衔接的 RGB(70,6,12)，下半遮挡区 y≥400 固定为 RGB(145,14,16)。
-- **背景构图**：顶部 0–112px 为金币栏等系统 UI 的暗色安全区；主要火光和 Boss 对比区域位于上半屏；y≥400 的下半区为单一遮挡色，不放置必须被看清的火光、角色轮廓或关键特效。
+- **背景构图**：以下坐标自顶部计算。顶部 0–112px 为金币栏等系统 UI 的暗色安全区；主要火光和 Boss 对比区域位于上半屏；y≥400 的下半区为单一遮挡色，不放置必须被看清的火光、角色轮廓或关键特效。战斗页的英雄栏占据自顶 480–840px、底部栏占据 840–960px，这两段一定会被 UI 覆盖。
 - **验收方式**：必须在目标显示尺寸下检查背景、Boss 和人物是否拥有相同的像素块观感；同时检查 PNG 尺寸、Alpha、缩放方式和来源授权记录。
 
 ## 资源来源与授权
@@ -129,19 +166,21 @@
 
 ### `Textures/Pixel/Bosses/`
 
-- [Boss_1.png](Textures/Pixel/Bosses/Boss_1.png)：使用 OpenGameArt.org 的 `Animated Wild Animals` Bear 动画包第一帧制作，运行时输出为 540×420 RGBA；原始完整 64×33 帧按 10 倍最近邻放大。
+- [Boss_1.png](Textures/Pixel/Bosses/Boss_1.png)：使用 OpenGameArt.org 的 `Animated Wild Animals` Bear 动画包第一帧制作，运行时输出为 424×240 RGBA；原始 64×33 帧按不透明区域裁切为 53×30 后按 8 倍最近邻放大。
 - 来源页面：[OpenGameArt Animated Wild Animals](https://opengameart.org/content/animated-wild-animals)，记录授权为 CC0。
 - 来源记录：[ArtSource/OpenGameArt/AnimatedWildAnimals/SOURCE.md](../ArtSource/OpenGameArt/AnimatedWildAnimals/SOURCE.md)。原始压缩包、原始动画条、裁剪帧和预览均保存在对应 `ArtSource/` 目录，不作为运行时路径。
 
 ### `Textures/Pixel/Heroes/`
 
 - [hero_1.png](Textures/Pixel/Heroes/hero_1.png)：使用 Kenney Tiny Dungeon 的 `tile_0085` 制作沛总 UI 半身图标，运行时输出为 32×32 RGBA；原始 16×16 素材按 2 倍最近邻放大。
+- [hero_1_卡片.png](Textures/Pixel/Heroes/hero_1_卡片.png)：同一 `tile_0085` 素材，按 5 倍最近邻放大为 80×80 RGBA，用于战斗页英雄栏卡片内的立绘。
 - 来源页面：[Kenney Tiny Dungeon](https://kenney.nl/assets/tiny-dungeon)，记录授权为 CC0。
 - 来源记录：[ArtSource/Kenney/TinyDungeon/SOURCE.md](../ArtSource/Kenney/TinyDungeon/SOURCE.md)。原始图块和授权文件保存在对应 `ArtSource/` 目录，不作为运行时路径。
 
 ### `Textures/Pixel/UI/`
 
 - [按钮_进入游戏_常态.png](Textures/Pixel/UI/按钮_进入游戏_常态.png) 与 [按钮_进入游戏_按下.png](Textures/Pixel/UI/按钮_进入游戏_按下.png)：项目内原创资源，没有第三方来源。由 30×9 像素格程序化生成并按 10 倍最近邻放大，颜色取自火焰背景既有调色板：轮廓 RGB(24,3,8)、常态填充 RGB(238,56,9)、高光 RGB(255,173,28)、暗部 RGB(145,17,8)。
+- [按钮_底部栏_常态.png](Textures/Pixel/UI/按钮_底部栏_常态.png)、[按钮_底部栏_按下.png](Textures/Pixel/UI/按钮_底部栏_按下.png)、[图标_金币.png](Textures/Pixel/UI/图标_金币.png) 与 [面板_英雄卡片.png](Textures/Pixel/UI/面板_英雄卡片.png)：项目内原创资源，没有第三方来源。均由像素格程序化生成并按 10 倍最近邻放大，取自同一调色板：轮廓 RGB(24,3,8)、面板填充 RGB(45,5,9)、面板高光 RGB(70,6,12)、金币 RGB(255,173,28) 与 RGB(255,220,61)。
 
 ### 其它当前无外部来源记录的目录
 

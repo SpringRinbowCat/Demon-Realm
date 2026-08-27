@@ -8,17 +8,48 @@
 
 当前目录已经按目标架构建立，实现刚刚起步。已实现：
 
-- `App/GameLauncher`：Cocos 应用启动入口，设置渲染上下文、设计分辨率、帧率并装配首个场景。
-- `Presentation/MainSceneView`：单场景宿主的表现根节点，挂载当前页面并接收页面回传的请求。
+- `App/GameLauncher`：Cocos 应用启动入口与当前的组合根，设置渲染上下文、设计分辨率、帧率，加载运行时配置，装配战斗系统与首个场景，并持有业务对象的所有权。
+- `Domain/Numeric/Decimal`：字符串定点数值类型，承载全部游戏数值。
+- `Domain/Modifier/`：属性修正（buff）模型，`Modifier`、`ModifierAggregate` 与带缓存的 `ModifierCollection`。
+- `Domain/State/`：`BossState`（血量与扣血）、`EconomyState`（金币与金币产出修正）、`HeroState`（基础属性、自身修正、自动攻击计时与派生属性缓存）。
+- `Domain/Combat/CombatSystem`：自动攻击结算，按时间推进伤害与金币，并产出 `CombatTickReport`。
+- `Application/BattleController`：战斗页面的用例入口，接收时间推进并产出展示快照。
+- `Infrastructure/Config/ConfigService`：读取并校验 `Resources/Config/` 下的 Boss 与英雄配置，输出内存配置对象。
+- `Presentation/MainSceneView`：单场景宿主的表现根节点，挂载当前页面、在页面之间切换、接收页面回传的请求，并把每帧时间推进转发给战斗用例。
 - `Presentation/EnterGameView`：进入游戏页面，包含背景图和进入游戏按钮。
+- `Presentation/BattleView`：战斗页面，包含顶部金币栏、上半区 Boss 区域、下半区可滑动英雄栏和底部栏入口，并按快照刷新金币与血量。
+- `Presentation/Format/NumberFormatter`：数值展示格式化，千分位与秒数小数位裁剪。
 
-其余目录仍只有 `.gitkeep`，尚未实现 `GameRoot`、Controller、System 或 Service。下文中未标注为已实现的类名、数据流和目录职责属于目标设计，不代表现有代码已经完成。
+尚未实现：`GameRoot`、点击攻击、技能系统、升级、关卡推进、挂机离线收益、存档和除战斗页外的四个页面。下文中未标注为已实现的类名、数据流和目录职责属于目标设计，不代表现有代码已经完成。
 
 项目已接入 cocos2d-x 4.0，macOS 上可以构建运行；平台入口在仓库根目录的 `proj.ios_mac/mac/main.cpp` 和 `proj.win32/main.cpp`，只负责创建 `GameLauncher` 并进入引擎主循环。构建步骤、架构限制和引擎补丁见 [../README.md](../README.md)。新增或移除源文件时必须同步更新根目录 `CMakeLists.txt` 的源文件列表。
 
 代码约定：业务代码放在 `DemonRealm` 命名空间中，文件按 `.hpp` / `.cpp` 拆分，命名和边界规则见 `.kiro/skills/code-architecture-standards`。
 
 Classes 不保存 PNG、JSON 或其它运行时资源。资源由 [Resources 模块](../Resources/README.md) 管理，Classes 只能通过配置、资源仓储或明确的 Infrastructure 接口访问它们。
+
+## 游戏数值表示
+
+所有游戏数值（攻击力、伤害、金币、血量、攻击间隔、buff 系数）统一使用 `Domain/Numeric/Decimal`：
+
+- **存储形式**：十进制数字字符串，固定保留 4 位小数，位数只受内存限制。挂机数值会持续膨胀，`double` 会丢精度、`long long` 会溢出。
+- **取整方向**：一律向下取整（截断），不做四舍五入。乘法先算出 8 位小数的中间结果，再截断回 4 位。
+- **非负约束**：只表示非负数，减法结果为负时钳制为 0。因此"减少类"效果（例如缩短攻击间隔）必须用小于 1 的乘法系数表达，不能用负的加法项。
+- **配置来源**：`Resources/Config/` 里的数值字段写成字符串，解析阶段只校验格式，避免 JSON 数字被解析器先转成 `double`。详见 [Resources/README.md](../Resources/README.md)。
+- **展示格式**：业务层只产出规范化字符串（例如 `"99999.0000"`），千分位、小数位裁剪等展示规则收口在 `Presentation/Format/NumberFormatter`。金币与血量按整数显示并加千分位；攻击间隔小数位最少 2 位、最多 4 位，去掉末尾多余的 0。
+
+唯一的例外是**帧时间**：`HeroState` 的攻击计时用 `double` 秒数累加，只用于判断"是否到达攻击间隔"。帧时间来自引擎、量级很小且不参与任何产出计算；若把它也换成 4 位定点，每帧会固定丢掉一小截时间，累积成系统性的攻击变慢。
+
+## 属性修正（buff）模型
+
+伤害、金币产出和攻击间隔共用一套修正模型，新增 buff 不需要改战斗结算流程：
+
+- `Modifier`：一条修正，包含来源 id、目标（`ModifierTarget`）、运算方式（加法或乘法）和数值。按来源 id 整批移除。
+- `ModifierAggregate`：把任意多条修正压缩成"一个加法项 + 一个乘法项"，最终值固定按 `(基础值 + 加法项) × 乘法项` 结算，先加后乘是全局约定。
+- `ModifierCollection`：修正容器，按目标缓存聚合结果，并维护版本号供外部做缓存失效判断。
+- 作用范围：只影响单个英雄的 buff 写进该 `HeroState` 的修正集合；影响全体的写进 `CombatSystem::getGlobalModifiers()`；金币产出加成写进 `EconomyState` 或全局集合的 `GoldGain` 目标。
+
+`HeroState` 的最终攻击力与最终攻击间隔是派生值，只在自身或全局修正版本变化后重算，平时每帧只做一次 `double` 比较，不触碰字符串大数运算。
 
 ## 架构原则
 
@@ -82,21 +113,34 @@ EventDamageApplied / EventGoldChanged / EventBossDefeated
 BossView / GoldView / StageView 刷新
 ```
 
-### 挂机攻击
+### 自动攻击（已实现）
 
 ```text
-GameClock
+MainSceneView::update（引擎帧时间）
     ↓
-IdleSystem 计算在线或离线时间结果
+BattleController::advance
     ↓
-批量生成统一的攻击/伤害结算
+CombatSystem::advance
+    ├─ 按最新修正刷新英雄派生属性（版本未变则跳过）
+    ├─ HeroState::advanceAutoAttack 累计计时并返回到期攻击次数
+    ├─ 合并本帧攻击次数为一次伤害 → BossState::applyDamage（返回实际扣血量）
+    └─ EconomyState::addGoldFromDamage（按实际扣血量与金币修正结算）
     ↓
-CombatSystem
+CombatTickReport（是否有变化）
     ↓
-统一处理 Boss、金币和关卡推进
+BattleView::updateStatus 刷新金币与剩余血量
 ```
 
-`IdleSystem` 只负责时间和批量结果，不得复制另一套伤害、金币或 Boss 结算规则。
+规则要点：
+
+- 每个英雄每过一次攻击间隔造成一次等于最终攻击力的伤害，并获得等量金币（金币加成走 `GoldGain` 修正）。
+- 金币按**实际扣血量**结算：Boss 只剩 1 点血时打出 5 点伤害，只获得 1 金币。
+- Boss 血量归零后立即停止本次推进，`MainSceneView` 随后停止每帧推进，避免对着 0 血继续产出金币。关卡推进尚未实现。
+- 单次推进的攻击次数有上限（`HeroState::kMaxAttacksPerAdvance`），防止进程被挂起很久后在一帧内结算过多攻击而卡住画面。
+- 只有产生变化的那一帧才刷新界面，且视图会比对上一次的原始数值字符串，数值没变不触碰 `Label`。
+- 进入游戏页停留期间不推进战斗，进入战斗页后才开始。
+
+离线收益需要独立的时间源与批量补算（`GameClock` + `IdleSystem`），不能依赖上面的帧驱动追帧；`IdleSystem` 落地后只负责时间与批量结果，仍走同一套 `CombatSystem` 结算，不得复制另一套伤害或金币规则。
 
 ### 升级购买
 
@@ -134,9 +178,13 @@ EventUpgradePurchased
 
 具体 PNG、JSON、像素密度和资源来源规则见 [Resources/README.md](../Resources/README.md)。
 
-## 已实现页面：进入游戏页面
+## 已实现页面与页面切换
 
-`Presentation/EnterGameView` 是当前唯一已实现的视图，按三步交付：
+当前有两个页面：进入游戏页面和战斗页面，都挂在同一个 `MainSceneView` 下，同一时间只挂载一个页面。
+
+### 进入游戏页面
+
+`Presentation/EnterGameView` 按三步交付：
 
 1. **背景图**：加载页面专用背景 `Textures/Pixel/Backgrounds/背景_进入游戏界面.png`，在可见区域居中，按设计分辨率 1:1 呈现，不做运行时缩放，并对贴图设置最近邻采样。页面背景与战斗场景背景相互独立，不共用同一张贴图。
 2. **进入游戏按钮**：用 `Textures/Pixel/UI/按钮_进入游戏_常态.png` 和 `按钮_进入游戏_按下.png` 组成 `MenuItemSprite`，挂在 `Menu` 上接收点击；按钮文字暂用系统字体绘制，接入像素字体后再替换。
@@ -150,21 +198,45 @@ EventUpgradePurchased
 - 资源路径集中在实现文件的常量中，业务层不硬编码 Cocos 资源路径。
 - 背景精灵和按钮菜单的生命周期由节点树持有，视图只保存非拥有引用。
 
-页面挂载与请求回传链路：
+### 战斗页面
+
+`Presentation/BattleView` 按传入的 `BattleSnapshot` 铺设三块区域：
+
+- **顶部金币栏**：金币图标加数量文字，数值来自经济状态，自动攻击产生收益时刷新。
+- **Boss 区域**：只占屏幕上半区（设计坐标 y 480–960），包含战斗背景、Boss 待机贴图（中心 y=700）和剩余血量文字（y=520）。剩余血量随伤害结算刷新。
+- **英雄栏**：占屏幕下半区（设计坐标 y 120–480），用 `cocos2d::ui::ScrollView` 垂直滚动，卡片按 `BattleSnapshot::heroes` 顺序从上往下排列。单卡 520×110，一屏显示三张，英雄变多时可上下滑动。
+- **英雄卡片内文字**：共四行——第一行是名称与等级，第二行攻击力，第三行攻击间隔，第四行已解锁技能。名称与等级各自使用固定列坐标（卡片内 x=120 与 x=300），不靠空格拉开距离，因此不同名字长度的英雄之间名称对齐、等级也对齐。
+- **底部栏**：五个入口按钮（战斗、英雄、商店、宝物、设置）。战斗为当前页，其余四个只回传点击事实，目标页面尚未实现。
+
+`BattleSnapshot`（定义在 `Application/BattleSnapshot.hpp`）里全部是“已经算好的展示值”，数值是规范化定点小数字符串：视图不做等级成长、解锁判定或伤害计算，只负责格式化与呈现。等级到攻击力的分段成长属于 Domain 规则，尚未实现，因此初始等级展示的是配置里的基础攻击力。技能名按 `unlockLevel` 不大于当前等级筛选，技能效果尚未实现。
+
+快照分成两级，用来控制刷新开销：`BattleSnapshot` 含静态信息与英雄卡片，只在建立界面时产出一次；`BattleStatusSnapshot` 只含金币与剩余血量，仅在数值变化的那一帧产出。
+
+### 页面装配与切换链路
 
 ```text
-GameLauncher（设置窗口、设计分辨率、帧率）
-    ↓ runWithScene
-MainSceneView（单场景宿主）
+GameLauncher（渲染上下文、设计分辨率、帧率）
+    ↓ ConfigService::load 读取 bosses.json / heroes.json
+    ↓ 解析数值字符串，构造 CombatSystem（BossState / EconomyState / HeroState）
+    ↓ 持有 BattleController（组合根拥有业务对象）
+    ↓ runWithScene，向场景注入非拥有指针
+MainSceneView（单场景宿主，持有 BattleController 的非拥有指针）
     ↓ addChild + setOnEnterGameRequested
 EnterGameView（背景图 + 进入游戏按钮）
-    ↓ 点击
-EnterGameView 输出日志并回传请求
-    ↓
-MainSceneView 记录请求（页面跳转待实现）
+    ↓ 点击，回传“请求进入游戏”
+MainSceneView 下一帧移除进入游戏页面、挂载 BattleView 并开始每帧推进
+    ↓ setOnBottomBarItemSelected
+BattleView（金币栏 + Boss + 英雄卡 + 底部栏）
+    ↓ 底部栏点击，回传入口项
+MainSceneView 决定页面切换（除战斗页外均未实现）
 ```
 
-待补齐项：`GameRoot` 尚未实现，目前由 `GameLauncher` 直接装配场景；进入游戏后的目标页面和真正的页面切换也尚未实现。
+生命周期约束：
+
+- 页面切换必须延迟到下一帧执行（`scheduleOnce`）。点击回调是在触摸分发过程中调用的，直接在回调里移除当前页面会销毁正在处理触摸的按钮节点。
+- 业务对象由 `GameLauncher` 用 `std::unique_ptr` 持有，场景只拿非拥有指针。场景重建或页面切换不会丢失战斗进度，也不会造成业务对象被 Cocos 节点树间接释放。
+
+待补齐项：`GameRoot` 尚未实现，目前由 `GameLauncher` 直接加载配置并装配业务对象；点击攻击、技能、升级、关卡推进、挂机离线收益和存档，以及底部栏其余四个页面都尚未实现。
 
 ## 存档与挂机时间
 
@@ -197,18 +269,24 @@ MainSceneView 记录请求（页面跳转待实现）
 │   ├── GameLauncher             # Cocos 启动入口（已实现）
 │   └── GameLifecycle            # 前后台、暂停、恢复和退出处理
 ├── Domain/
-│   ├── State/                   # 玩家、Boss、关卡、金币和升级状态
-│   ├── Combat/                  # 点击、挂机、离线攻击和伤害结算
+│   ├── Numeric/                 # 定点数值类型 Decimal（已实现）
+│   ├── Modifier/                # 属性修正模型与聚合缓存（已实现）
+│   ├── State/                   # 玩家、Boss、关卡、金币和升级状态（已实现 Boss/Economy/Hero）
+│   ├── Combat/                  # 点击、挂机、离线攻击和伤害结算（已实现自动攻击）
 │   ├── Economy/                 # 金币收入、消费和经济规则
 │   ├── Progression/             # 关卡推进、解锁和通关奖励
 │   └── Idle/                    # 在线挂机、离线时间和离线收益
 ├── Application/
-│   ├── CombatController          # 接收攻击输入并调用 CombatSystem
+│   ├── BattleController          # 战斗页面用例入口与展示快照（已实现）
+│   ├── BattleSnapshot            # 战斗页面展示快照结构（已实现）
+│   ├── BattlePresentationData    # 与战斗推进无关的展示信息（已实现）
 │   ├── UpgradeController         # 处理升级购买请求
 │   ├── StageController           # 处理关卡进入、切换和重试
 │   └── IdleController            # 处理自动战斗和离线收益领取
 ├── Presentation/                 # Cocos 场景、UI、输入和动画表现
 │   ├── EnterGameView             # 进入游戏页面背景与进入游戏按钮（已实现）
+│   ├── BattleView                # 战斗页面金币栏、Boss、英雄卡与底部栏（已实现）
+│   ├── Format/                   # 数值展示格式化（已实现 NumberFormatter）
 │   ├── MainSceneView             # 单场景表现根节点（已实现）
 │   ├── BossView                  # Boss 贴图、血条和受击表现
 │   ├── GoldView                  # 金币数量和奖励表现
@@ -218,7 +296,7 @@ MainSceneView 记录请求（页面跳转待实现）
 │   └── GameViewAdapter           # 场景节点与各 View 的装配
 ├── Infrastructure/
 │   ├── Save/                     # 存档、加载和版本迁移
-│   ├── Config/                   # Boss、关卡和升级配置读取
+│   ├── Config/                   # Boss、关卡和升级配置读取（已实现 ConfigService）
 │   ├── Time/                     # 游戏时间和挂机时间来源
 │   ├── PixelAssets/              # 像素贴图加载、缓存和释放
 │   └── Platform/                 # Windows/macOS 平台差异封装
@@ -237,5 +315,7 @@ MainSceneView 记录请求（页面跳转待实现）
 5. 不让每个模块自行读写存档。
 6. 不让像素贴图资源依赖 Domain 规则。
 7. 不为了模仿大型项目而过早拆分过多系统。
+8. 不用 `float`、`double` 或整数类型保存游戏数值，一律使用 `Decimal`；帧时间是唯一例外。
+9. 不绕过 `CombatSystem` 直接改血量或金币，也不在结算之外自行计算 buff 加成。
 
 新增代码时，先确认职责归属、依赖方向、所有权、生命周期、线程边界和错误处理，再扩展对应目录；不要用临时全局状态、跨层指针或 View 特判绕过架构边界。
